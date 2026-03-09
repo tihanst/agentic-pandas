@@ -21,11 +21,11 @@ Your entire response must be a single fenced code block:
 ```
 
 If you cannot complete the task, still respond only with a code block creating a 1 by 1 data frame containing a comment explaining why as a Python string.
-If your code produces one or more final DataFrame results (NOT intermediate ones), you will save the DataFrames by naming the dataframe(s) with a logical name using the pl.DataFrame.name method. For each final DataFrame always save it at the end using the following code to define the file name:
-timestamp = datetime.datetime.strptime(time.ctime(), "%a %b %d %H:%M:%S %Y").strftime("%Y-%m-%d_%H-%M-%S")
-filename_variable = name + '_' + timestamp + '.csv'
+If your code produces one or more final DataFrame results (NOT intermediate ones), you will save the DataFrame(s) by naming the DataFrame(s) with an intuitive and logical name <INTUITIVE_LOGICAL_NAME>, beginning with final_result_df. So the name will be final_result_df_<INTUITIVE_LOGICAL_NAME>. For each final DataFrame always save it at the end using the following code to define the file name:
+timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+filename_variable = 'final_result_df_<INTUITIVE_LOGICAL_NAME>' + '_' + timestamp + '.csv'
 Then append the filename to the below funciton call where indicated
-result_df.to_csv(r"{path}/" + filename_variable", index=True)
+final_result_df_<INTUITIVE_LOGICAL_NAME>.to_csv(r"{path}/" + filename_variable, index=True)
 """
 
 
@@ -43,12 +43,12 @@ Your entire response must be a single fenced code block:
 ```
 
 If you cannot complete the task, still respond only with a code block containing a comment explaining why as a Python comment.
-If your code produces one or more final DataFrame results, you will save the DataFrames by naming the dataframe(s) with a logical name using the pd.DataFrame.name method. For each final DataFrame always save it at the end using the following code to define the file name:
-timestamp = datetime.datetime.strptime(time.ctime(), "%a %b %d %H:%M:%S %Y").strftime("%Y-%m-%d_%H-%M-%S")
+If your code produces one or more final DataFrame results, you will save the DataFrame(s) by naming the DataFrame(s) with an intuitive and logical name <INTUITIVE_LOGICAL_NAME>, beginning with final_result_df. So the name will be final_result_df_<INTUITIVE_LOGICAL_NAME>. For each final DataFrame always save it at the end using the following code to define the file name:
+timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 filename_variable = name + '_' + timestamp + '.csv'
 Then append the filename to the below funciton call where indicated
-result_df.to_csv(r"{path}/" + filename_variable, index=True)
-If you produce intermediate DataFrames and are asked to save them by the user, save them with the prefix 'STEP_X' appended, where X is the step number.
+final_result_df_<INTUITIVE_LOGICAL_NAME>.to_csv(r"{path}/" + filename_variable, index=True)
+If you are explicitly given at one time an entire set of steps to produce intermediate DataFrames MAKE SURE TO SAVE EACH OF THEM them with the prefix 'STEP_X' appended, where X is the step number. Each step should produce only one last data frame called 'STEP_X' that will be passed on to start the next step, regardless of how many sub-steps or sub-operations are required to do it. 
 """
 
 
@@ -63,6 +63,7 @@ initial_data_frame = pd.read_csv('{filepath}/{file}')
 
 STATE_PROBE = r"""
 import pandas as pd, json
+from datetime import datetime
 
 class _Encoder(json.JSONEncoder):
     def default(self, obj):

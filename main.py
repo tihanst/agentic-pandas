@@ -1,4 +1,3 @@
-
 import warnings
 import sys
 import re
@@ -6,6 +5,7 @@ import os
 import time
 import datetime
 import json
+import webbrowser
 import argparse
 import queue
 from typing import List, Dict, Any
@@ -16,8 +16,8 @@ import pandas as pd
 import jupyter_client
 from jupyter_client.manager import KernelManager
 from jupyter_client.blocking.client import BlockingKernelClient
-from rich.console import Console
-from rich.markdown import Markdown
+# from rich.console import Console
+# from rich.markdown import Markdown
 
 from config import LLMConfig, FilePathConfig
 from llm import LLM
@@ -28,40 +28,48 @@ from prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_WITH_STEPS, STATE_PROBE, LOAD_S
 warnings.filterwarnings("ignore")
 jupyter_client.client.KernelClient.__del__ = lambda self: None
 
-llm_settings = LLMConfig() #type: ignore
-
-path_settings = FilePathConfig() #type: ignore
 
 
 
-llm = LLM(llm_settings.provider, llm_settings.llm_api_key, llm_settings.llm_name, llm_settings.llm_endpoint, llm_settings.is_local) 
-
-
-def acquire_input(manager: KernelManager, accumulated_user_queries: List[str], file_name: str | None = None) -> str | None:
+def acquire_input(manager: KernelManager, path_settings: FilePathConfig, accumulated_user_queries: List[str], file_name: str | None = None) -> str | None:
+    
     lines: List[str] = []
     
+    # If file option is passed on CLI read it and execute
     if file_name is not None:
         path = Path(path_settings.markdown_path)
         if not path.is_dir():
             os.mkdir(path.resolve())
-        with open(f'{path.resolve()} / {file_name}') as f:
-            query_list = [x for x in f.readlines()]
-            query = "".join(query_list)
+        with open(path.resolve() / file_name, encoding="utf-8") as f:
+            query = f.read().rstrip()
             accumulated_user_queries.append(query)
             return query    
 
+    # If file option is not passed on CLI read from stdin
     while True:
         query = sys.stdin.readline()
-        lines.append(query.rstrip('\n'))
-        if query.lstrip()[:5] == "!exit":
+
+        if query == "":
+            break
+        
+        stripped = query.rstrip("\n")
+
+        if stripped.strip() == "":
+            print("Enter in your prompt ending in _END_, or enter in !exit: \n\n")
+            continue
+
+        if stripped.lstrip().startswith("!exit"):
             manager.shutdown_kernel()
             break
-        elif query.rstrip('\n')[-5:] == "_END_":
-            print(f"query is : {"".join(lines)[:-5]}\n\n")
-            parsed_query = "".join(lines)[:-5]
+
+        if stripped.endswith("_END_"):
+            lines.append(stripped[:-5])
+            parsed_query = "\n".join(lines).strip()
+            print(f"query is : {parsed_query}\n\n")
             accumulated_user_queries.append(parsed_query)
             return parsed_query
 
+        lines.append(stripped)
 
 def strip_ansi(text: str) -> str:
     return re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', text)
@@ -74,7 +82,7 @@ def extract_code(text: str) -> str:
     return text[10:-4]
 
 
-def get_kernel_state(client: BlockingKernelClient) -> dict[str, Any]:
+def get_kernel_state(client: BlockingKernelClient) -> Dict[str, Any]:
     result = execute_and_capture(client, STATE_PROBE)
     for output in result['outputs']:
         if output['type'] == 'stream':
@@ -86,7 +94,7 @@ def get_kernel_state(client: BlockingKernelClient) -> dict[str, Any]:
     return {}
 
 
-def execute_and_capture(client: BlockingKernelClient, code: str, timeout: int = 30) -> dict[str, str]:
+def execute_and_capture(client: BlockingKernelClient, code: str, timeout: int = 30) -> Dict[str, str]:
     
     msg_id = client.execute(code)
     outputs = []
@@ -104,8 +112,7 @@ def execute_and_capture(client: BlockingKernelClient, code: str, timeout: int = 
         
         if msg_type == 'stream':
             name = content['name']
-            stream_buffers['name'] = stream_buffers.get(name, '') + content['text']
-            outputs.append({'type': 'stream', 'text': content['text']})
+            stream_buffers[name] = stream_buffers.get(name, '') + content['text']
         elif msg_type == 'execute_result':
             outputs.append({'type': 'result', 'data': content['data']['text/plain']})
         elif msg_type == 'display_data':
@@ -122,21 +129,21 @@ def execute_and_capture(client: BlockingKernelClient, code: str, timeout: int = 
     return {'outputs': outputs, 'error': error}
 
 
-def get_time_sorted_file() -> pd.DataFrame:
+def get_time_sorted_file(path_settings: FilePathConfig) -> pd.DataFrame:
 
-    #timestamp = datetime.datetime.strptime(time.ctime(), "%a %b %d %H:%M:%S %Y").strftime("%Y-%m-%d_%H-%M-%S") 
-    directory = Path(path_settings.output_path).resolve() #/ timestamp
-    files = sorted([f for f in directory.iterdir() if f.is_file()], key=os.path.getctime)
-
+    directory = Path(path_settings.output_path).resolve()
+    try:
+        files = sorted([f for f in directory.iterdir() if f.is_file()], key=os.path.getmtime)
+    except IndexError as e:
+        print(f"Error {e}:\n\nNo data frame was produced or folder {path_settings.output_path} is empty.")
     # Select last which is newest        
     df = pd.read_csv(files[-1].resolve(), encoding='utf-8', index_col=0)
     return df 
 
 
-def get_all_time_sorted_files() -> List[pd.DataFrame]:
+def get_all_time_sorted_files(path_settings: FilePathConfig) -> List[pd.DataFrame]:
 
-    #timestamp = datetime.datetime.strptime(time.ctime(), "%a %b %d %H:%M:%S %Y").strftime("%Y-%m-%d_%H-%M-%S") 
-    directory = Path(path_settings.output_path).resolve() #/ timestamp
+    directory = Path(path_settings.output_path).resolve() 
     files = sorted([f for f in directory.iterdir() if f.is_file()], key=os.path.getctime)
 
     # Oldest to newest        
@@ -144,7 +151,7 @@ def get_all_time_sorted_files() -> List[pd.DataFrame]:
     return dfs 
 
 
-def deliver_to_browser(df: pd.DataFrame, timestamp: str, counter: int | None = None):
+def deliver_to_browser(df: pd.DataFrame, path_settings: FilePathConfig, timestamp: str, counter: int | None = None):
     
     html = f"""
     <html>
@@ -180,20 +187,19 @@ def deliver_to_browser(df: pd.DataFrame, timestamp: str, counter: int | None = N
     
     if counter is None:
         path = path / f"{timestamp}.html"
-        with open(path, "w") as f:
-            f.write(html)
     else:
         path = path / f"{timestamp}_{counter}.html"
-        with open(path, "w") as f:
-            f.write(html)
 
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(html)
     
-    import webbrowser
+    
+    
     print(f"opening file at {path}")
     webbrowser.open(f"file://{path}")
 
 
-def execute_csv_load(client: BlockingKernelClient, filename: str):
+def execute_csv_load(client: BlockingKernelClient, path_settings: FilePathConfig, filename: str):
     path = Path(path_settings.input_path).resolve()
     if not path.is_dir():
         os.mkdir(path)
@@ -203,33 +209,39 @@ def execute_csv_load(client: BlockingKernelClient, filename: str):
     print(x)
 
 
-def save_history(conversation_history: List[Message]) -> None:
+def save_history(conversation_history: List[Message], path_settings: FilePathConfig) -> None:
     
-    timestamp = datetime.datetime.strptime(time.ctime(), "%a %b %d %H:%M:%S %Y").strftime("%Y-%m-%d_%H-%M-%S")
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     path = Path(path_settings.history_path)
     if not path.is_dir():
         os.mkdir(path)
 
-    with open(path / f"{timestamp}_history.txt", 'w') as f:
+    with open(path / f"{timestamp}_history.txt", 'w', encoding='utf-8') as f:
         f.write("\n\n".join([x.content for x in conversation_history])) 
     
 
-def reset_reload_context_save_history(conversation_history: List[Message], state: Dict[str, Any], query: str, system_prompt: str, accumulated_user_queries: List[str]) -> None:
-    # Clear and save conversation state to clean up context window 
-    # conversation_history.append(Message(role='user', content=f"The ending kernel state is: \n\n{state}\n\n"))
-    # save_history(conversation_history)
+def reset_reload_context_compact_history(conversation_history: List[Message], state: Dict[str, Any], path_settings: FilePathConfig, query: str, system_prompt: str, accumulated_user_queries: List[str]) -> None:
+    
+    #Clear and save conversation state to clean up context window 
+    conversation_history.append(Message(role='user', content=f"The ending kernel state is: \n\n{state}\n\n"))
+    save_history(conversation_history, path_settings)
 
-    conversation_history = []
+    conversation_history.clear()
     conversation_history.append(Message(role='system', content=system_prompt))
 
     #Test context window compression by adding in SYSTEM plus concatenation of summary of all previous user prompts (not messages as those contain code and error traces)
     
     query = f"The current kernel state is: \n\n{state}\n\n\nThis was achieved through the following user directions:\n{'\n'.join(accumulated_user_queries)}\n\nThe next user instruction is:\n\n" + query
     conversation_history.append(Message(role='user', content=query))
+    print(conversation_history[-1].content)
 
 
 
 def main():
+
+    llm_settings = LLMConfig() #type: ignore
+    path_settings = FilePathConfig() #type: ignore
+    llm = LLM(llm_settings.provider, llm_settings.llm_api_key, llm_settings.llm_name, llm_settings.llm_endpoint, llm_settings.is_local) 
 
     system_prompt: str
     accumulated_prompts: List[str] = []
@@ -241,7 +253,6 @@ def main():
     kc.wait_for_ready()
 
     conversation_history: List[Message] = []
-    print(f"Accumulated prompts:\n{accumulated_prompts}")
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--datafile', type=str,  help='full csv filename')
@@ -251,13 +262,13 @@ def main():
     args = parser.parse_args()
 
     if args.datafile:
-        execute_csv_load(kc, args.datafile)
+        execute_csv_load(kc, path_settings, args.datafile)
 
     if args.input:
-        query = acquire_input(km, accumulated_prompts, args.input)
+        query = acquire_input(km, path_settings, accumulated_prompts, args.input)
     else:    
-        print("Enter in your prompt ending in '_END_': \n\n")
-        query = acquire_input(km, accumulated_prompts)
+        print("Enter in your prompt ending in _END_, or enter in !exit: \n\n")
+        query = acquire_input(km, path_settings, accumulated_prompts)
 
     if not query:
         sys.exit(0)
@@ -326,36 +337,36 @@ def main():
             continue
 
         
-        html_files_creation_timestamp = datetime.datetime.strptime(time.ctime(), "%a %b %d %H:%M:%S %Y").strftime("%Y-%m-%d_%H-%M-%S")
+        html_files_creation_timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         
         if args.steps:
-            dfs = get_all_time_sorted_files()
+            dfs = get_all_time_sorted_files(path_settings)
             for dataframe in enumerate(dfs):
-                deliver_to_browser(dataframe[1], html_files_creation_timestamp, dataframe[0])
+                deliver_to_browser(dataframe[1], path_settings, html_files_creation_timestamp, dataframe[0])
             
         else:
-            df = get_time_sorted_file() 
-            deliver_to_browser(df, html_files_creation_timestamp)
+            df = get_time_sorted_file(path_settings) 
+            deliver_to_browser(df, path_settings, html_files_creation_timestamp)
 
         # Get kernel state to pass to LLM on next iteration
         state = get_kernel_state(kc)
         print("Post error-free iteration kernel state is:\n\n")
         pprint(state, indent=3)
         
-        print("\n\nEnter in your follow-up question: \n\n")
-        query = acquire_input(km, accumulated_prompts)
+        print("\n\nEnter in your follow-up question followed by _END_ or to quit enter in !exit: \n\n")
+        query = acquire_input(km, path_settings, accumulated_prompts)
         
         if not query:  # Exit and save history
             query = f"The final kernel state is: \n\n{state}\n\nEND"
             conversation_history.append(Message(role='user', content=query))
-            save_history(conversation_history)
+            save_history(conversation_history, path_settings)
             sys.exit(0)
 
-        query = f"The current kernel state is: \n\n{state}\n\n" + query
+        # query = f"The current kernel state is: \n\n{state}\n\n" + query
 
-        conversation_history.append(Message(role='user', content=query))
+        # conversation_history.append(Message(role='user', content=query))
         
-        #reset_reload_context_save_history(conversation_history, state, query, system_prompt, accumulated_prompts)
+        reset_reload_context_compact_history(conversation_history, state, path_settings, query, system_prompt, accumulated_prompts)
 
 
 
