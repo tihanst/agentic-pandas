@@ -49,6 +49,7 @@ filename_variable = name + '_' + timestamp + '.csv'
 Then append the filename to the below funciton call where indicated
 final_result_df_<INTUITIVE_LOGICAL_NAME>.to_csv(r"{path}/" + filename_variable, index=True)
 If you are explicitly given at one time an entire set of steps to produce intermediate DataFrames MAKE SURE TO SAVE EACH OF THEM them with the prefix 'STEP_X' appended, where X is the step number. Each step should produce only one last data frame called 'STEP_X' that will be passed on to start the next step, regardless of how many sub-steps or sub-operations are required to do it. 
+If an error is made that generates an error traceback start regenerate all individual step datafames from the start once again, do not rely on using DataFrames that may be in memory.
 """
 
 

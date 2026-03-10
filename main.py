@@ -2,13 +2,13 @@ import warnings
 import sys
 import re
 import os
-import time
 import datetime
 import json
+import shutil
 import webbrowser
 import argparse
 import queue
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from pathlib import Path
 from pprint import pprint
 
@@ -144,15 +144,15 @@ def get_time_sorted_file(path_settings: FilePathConfig) -> pd.DataFrame:
 def get_all_time_sorted_files(path_settings: FilePathConfig) -> List[pd.DataFrame]:
 
     directory = Path(path_settings.output_path).resolve() 
-    files = sorted([f for f in directory.iterdir() if f.is_file()], key=os.path.getctime)
+    files = sorted([f for f in directory.iterdir() if f.is_file()], key=os.path.getmtime)
 
     # Oldest to newest        
     dfs = [pd.read_csv(x.resolve(), encoding='utf-8', index_col=0) for x in files]
+    
     return dfs 
 
 
-def deliver_to_browser(df: pd.DataFrame, path_settings: FilePathConfig, timestamp: str, counter: int | None = None):
-    
+def deliver_to_browser(df: pd.DataFrame, path_settings: FilePathConfig, timestamp: str, counter: int | None = None, open_browser: bool = True) -> Path:
     html = f"""
     <html>
     <head>
@@ -179,10 +179,13 @@ def deliver_to_browser(df: pd.DataFrame, path_settings: FilePathConfig, timestam
     """
      
     path = Path(path_settings.html_path).resolve() #/ timestamp
-    
+
+
     if not path.is_dir():
         os.mkdir(path)
     print(f" Path is : {path}")
+
+
 
     
     if counter is None:
@@ -192,11 +195,12 @@ def deliver_to_browser(df: pd.DataFrame, path_settings: FilePathConfig, timestam
 
     with open(path, "w", encoding="utf-8") as f:
         f.write(html)
-    
-    
-    
-    print(f"opening file at {path}")
-    webbrowser.open(f"file://{path}")
+
+    if open_browser:
+        print(f"opening file at {path}")
+        webbrowser.open(f"file://{path}")
+
+    return path
 
 
 def execute_csv_load(client: BlockingKernelClient, path_settings: FilePathConfig, filename: str):
@@ -209,6 +213,22 @@ def execute_csv_load(client: BlockingKernelClient, path_settings: FilePathConfig
     print(x)
 
 
+def archive_error_files(path_settings: FilePathConfig) -> None:
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    for dir_str in (path_settings.output_path, path_settings.html_path):
+        directory = Path(dir_str).resolve()
+        if not directory.is_dir():
+            continue
+        files = [f for f in directory.iterdir() if f.is_file()]
+        if not files:
+            continue
+        error_dir = directory / f"error_{timestamp}"
+        error_dir.mkdir(parents=True, exist_ok=True)
+        for f in files:
+            shutil.move(str(f), error_dir / f.name)
+        print(f"Archived {len(files)} file(s) to {error_dir}")
+
+
 def save_history(conversation_history: List[Message], path_settings: FilePathConfig) -> None:
     
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -218,8 +238,28 @@ def save_history(conversation_history: List[Message], path_settings: FilePathCon
 
     with open(path / f"{timestamp}_history.txt", 'w', encoding='utf-8') as f:
         f.write("\n\n".join([x.content for x in conversation_history])) 
-    
 
+def file_results(path_settings: FilePathConfig, timestamp: str = "") -> Path:
+
+    def _helper_file_results(ref_folder: Path) -> Path:
+        # Order is oldest to most recent file created
+        files: List[Path] = sorted([f for f in  ref_folder.iterdir() if f.is_file()], key=os.path.getmtime)
+        foldername = ref_folder / files[-1].stem
+        foldername.mkdir(parents=True, exist_ok=True)
+        for f in files:
+            shutil.move(f, foldername)
+        return foldername
+
+    #handle csv
+    ref_folder = Path(path_settings.output_path).resolve()
+    _ = _helper_file_results(ref_folder)
+    #handle html
+    ref_folder = Path(path_settings.html_path).resolve()
+    html_final_folder = _helper_file_results(ref_folder)
+    print(f"\n\nHTML steps folder is: {html_final_folder}\n\n")
+    return html_final_folder 
+
+    
 def reset_reload_context_compact_history(conversation_history: List[Message], state: Dict[str, Any], path_settings: FilePathConfig, query: str, system_prompt: str, accumulated_user_queries: List[str]) -> None:
     
     #Clear and save conversation state to clean up context window 
@@ -331,9 +371,10 @@ def main():
             print("\n\n\n")
             error_message = Message(role='user',
                                     content=f"""The current kernel state is {state}\n\n. The previous code generated the following error, please fix it:\n{full_error}\n\n""")
-            
+
             conversation_history.append(error_message)
             query = error_message.content
+            archive_error_files(path_settings)
             continue
 
         
@@ -341,17 +382,31 @@ def main():
         
         if args.steps:
             dfs = get_all_time_sorted_files(path_settings)
+
             for dataframe in enumerate(dfs):
-                deliver_to_browser(dataframe[1], path_settings, html_files_creation_timestamp, dataframe[0])
+                deliver_to_browser(dataframe[1], path_settings, html_files_creation_timestamp, dataframe[0], open_browser=False)
+            html_steps_path = file_results(path_settings, html_files_creation_timestamp)
+            for html_file in sorted(html_steps_path.iterdir()):
+                if html_file.suffix == '.html':
+                    print(f"opening file at {html_file}")
+                    webbrowser.open(f"file://{html_file}")
+            
+            
             
         else:
             df = get_time_sorted_file(path_settings) 
             deliver_to_browser(df, path_settings, html_files_creation_timestamp)
 
+        
+
         # Get kernel state to pass to LLM on next iteration
         state = get_kernel_state(kc)
         print("Post error-free iteration kernel state is:\n\n")
         pprint(state, indent=3)
+
+
+        
+        
         
         print("\n\nEnter in your follow-up question followed by _END_ or to quit enter in !exit: \n\n")
         query = acquire_input(km, path_settings, accumulated_prompts)
@@ -362,11 +417,11 @@ def main():
             save_history(conversation_history, path_settings)
             sys.exit(0)
 
-        # query = f"The current kernel state is: \n\n{state}\n\n" + query
+        query = f"The current kernel state is: \n\n{state}\n\n" + query
 
-        # conversation_history.append(Message(role='user', content=query))
+        conversation_history.append(Message(role='user', content=query))
         
-        reset_reload_context_compact_history(conversation_history, state, path_settings, query, system_prompt, accumulated_prompts)
+        #reset_reload_context_compact_history(conversation_history, state, path_settings, query, system_prompt, accumulated_prompts)
 
 
 
