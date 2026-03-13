@@ -8,7 +8,7 @@ import shutil
 import webbrowser
 import argparse
 import queue
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Union 
 from pathlib import Path
 from pprint import pprint
 
@@ -16,8 +16,6 @@ import pandas as pd
 import jupyter_client
 from jupyter_client.manager import KernelManager
 from jupyter_client.blocking.client import BlockingKernelClient
-# from rich.console import Console
-# from rich.markdown import Markdown
 
 from config import LLMConfig, FilePathConfig
 from llm import LLM
@@ -26,7 +24,7 @@ from prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_WITH_STEPS, STATE_PROBE, LOAD_S
 
 # Setup
 warnings.filterwarnings("ignore")
-jupyter_client.client.KernelClient.__del__ = lambda self: None
+#jupyter_client.client.KernelClient.__del__ = lambda self: None
 
 
 
@@ -76,14 +74,25 @@ def strip_ansi(text: str) -> str:
 
 
 def extract_code(text: str) -> str:
-    assert '```python\n' == text[:10], "Incorrect code block start formatting."
-    assert '\n```' == text[-4:], "Incorrect code block end formatting"
+    if '```python\n' != text[:10]:
+        raise ValueError("Incorrect code block start formatting.")
+    if '\n```' != text[-4:]:
+        raise ValueError("Incorrect code block end formatting")
+    
+    # assert '```python\n' == text[:10], "Incorrect code block start formatting."
+    # assert '\n```' == text[-4:], "Incorrect code block end formatting"
     
     return text[10:-4]
 
 
 def get_kernel_state(client: BlockingKernelClient) -> Dict[str, Any]:
-    result = execute_and_capture(client, STATE_PROBE)
+    
+    try:
+        result = execute_and_capture(client, STATE_PROBE)
+    except TimeoutError:
+        print("Timed out executing state probe")
+        raise
+
     for output in result['outputs']:
         if output['type'] == 'stream':
             try:
@@ -105,7 +114,8 @@ def execute_and_capture(client: BlockingKernelClient, code: str, timeout: int = 
         try:
             msg = client.get_iopub_msg(timeout=timeout)
         except queue.Empty:
-            break
+            raise TimeoutError(f"kernel timed-out after {timeout} seconds.")
+            
         
         msg_type = msg['msg_type']
         content = msg['content']
@@ -132,10 +142,8 @@ def execute_and_capture(client: BlockingKernelClient, code: str, timeout: int = 
 def get_time_sorted_file(path_settings: FilePathConfig) -> pd.DataFrame:
 
     directory = Path(path_settings.output_path).resolve()
-    try:
-        files = sorted([f for f in directory.iterdir() if f.is_file()], key=os.path.getmtime)
-    except IndexError as e:
-        print(f"Error {e}:\n\nNo data frame was produced or folder {path_settings.output_path} is empty.")
+    files = sorted([f for f in directory.iterdir() if f.is_file()], key=os.path.getmtime)
+    
     # Select last which is newest        
     df = pd.read_csv(files[-1].resolve(), encoding='utf-8', index_col=0)
     return df 
@@ -178,16 +186,12 @@ def deliver_to_browser(df: pd.DataFrame, path_settings: FilePathConfig, timestam
     </html>
     """
      
-    path = Path(path_settings.html_path).resolve() #/ timestamp
-
+    path = Path(path_settings.html_path).resolve()
 
     if not path.is_dir():
         os.mkdir(path)
     print(f" Path is : {path}")
 
-
-
-    
     if counter is None:
         path = path / f"{timestamp}.html"
     else:
@@ -207,10 +211,14 @@ def execute_csv_load(client: BlockingKernelClient, path_settings: FilePathConfig
     path = Path(path_settings.input_path).resolve()
     if not path.is_dir():
         os.mkdir(path)
-    x = execute_and_capture(client, LOAD_STATE.format(filepath=str(path), file=filename))
+    try:
+        x = execute_and_capture(client, LOAD_STATE.format(filepath=str(path), file=filename))
+    except TimeoutError as e:
+        print("Timeout error in loading csv.")
+        raise
     if x['error']:
         x['error']['traceback'] = [strip_ansi(y) for y in x['error']['traceback']]
-    print(x)
+        print(x)
 
 
 def archive_error_files(path_settings: FilePathConfig) -> None:
@@ -275,16 +283,34 @@ def reset_reload_context_compact_history(conversation_history: List[Message], st
     conversation_history.append(Message(role='user', content=query))
     print(conversation_history[-1].content)
 
+def exit(kc: BlockingKernelClient, km: KernelManager, message: str | None = None,):
+    if km.is_alive():
+        km.shutdown_kernel(now=False)
+    
+    kc.stop_channels()
 
+    km.cleanup_resources()
+    
+    sys.exit(f"{message}")
+    
+     
 
 def main():
 
-    llm_settings = LLMConfig() #type: ignore
-    path_settings = FilePathConfig() #type: ignore
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-d', '--datafile', type=str,  help='full csv filename')
+    parser.add_argument('-i', '--input', type=str, help='markdown file for initial model prompt')
+    parser.add_argument('-s', '--steps',  action='store_true', help='Indicate step by step data frame saving')
+    parser.add_argument('-c', '--compact', action='store_true', help='Use compact history to save tokens, but history tracking remains.')
+
+    args = parser.parse_args()
+
+    llm_settings = LLMConfig() 
+    path_settings = FilePathConfig() 
     llm = LLM(llm_settings.provider, llm_settings.llm_api_key, llm_settings.llm_name, llm_settings.llm_endpoint, llm_settings.is_local) 
 
     system_prompt: str
-    accumulated_prompts: List[str] = []
+    accumulated_user_queries: List[str] = []
 
     km = KernelManager(kernel_name='python3')
     km.start_kernel()
@@ -294,53 +320,52 @@ def main():
 
     conversation_history: List[Message] = []
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-d', '--datafile', type=str,  help='full csv filename')
-    parser.add_argument('-i', '--input', type=str, help='markdown file for initial model prompt')
-    parser.add_argument('-s', '--steps',  action='store_true', help='Indicate step by step data frame saving')
-
-    args = parser.parse_args()
-
     if args.datafile:
-        execute_csv_load(kc, path_settings, args.datafile)
+        try:
+            execute_csv_load(kc, path_settings, args.datafile)
+        except TimeoutError as e:
+            exit(kc, km, f"Timed out in loading csv file. Error:\n{e}")
 
     if args.input:
-        query = acquire_input(km, path_settings, accumulated_prompts, args.input)
+        query = acquire_input(km, path_settings, accumulated_user_queries, args.input)
     else:    
         print("Enter in your prompt ending in _END_, or enter in !exit: \n\n")
-        query = acquire_input(km, path_settings, accumulated_prompts)
+        query = acquire_input(km, path_settings, accumulated_user_queries)
 
     if not query:
-        sys.exit(0)
+        exit(kc, km, "No query")
 
     if args.steps:
         
-        path_settings.output_path = 'tmp/steps'
-        path_settings.html_path = 'tmp/html_files/steps'
+        path_settings.output_path = path_settings.output_path + '/steps'
+        path_settings.html_path = path_settings.html_path + '/steps'
         system_prompt = SYSTEM_PROMPT_WITH_STEPS.format(path=Path(path_settings.output_path).resolve())
     else:
         system_prompt = SYSTEM_PROMPT.format(path=Path(path_settings.output_path).resolve())
             
     conversation_history.append(Message(role='system', content=system_prompt))
     
-    # console = Console()
-    # md = Markdown(query)
-    # print("\n\nYou entered in:\n\n")
-    # console.print(md)
     
-    state = get_kernel_state(kc)
+    try:
+        state = get_kernel_state(kc)
+    except TimeoutError as e:
+        exit(kc, km, f"Timed out getting initial kernel state. Error:\n{e}")
+
     query = f"The current kernel state is: \n\n{state}\n\n" + query
 
     query_msg = Message(role='user', content=query)
     conversation_history.append(query_msg)
 
+    
     while True:        
 
-        print(f"Accumulated prompts are:\n\n {accumulated_prompts}")
+        print(f"Accumulated prompts are:\n\n {accumulated_user_queries}")
 
-        payload = [m.model_dump() for m in conversation_history]
+        payload: List[Dict[str, Union[str, Message]]] = [m.model_dump() for m in conversation_history]
         
+        acceptable_code_block_counter = 0
         while True:
+            # While loop will loop until acceptable code block is returned.
             result = llm.completion_call(payload)
             clean_result = strip_ansi(result['choices'][0]['message']['content'])
             print(f"Code block is:\n\n{clean_result}")
@@ -348,15 +373,21 @@ def main():
             try:
                 code_block = extract_code(clean_result)
                 break
-            except AssertionError as e:
+            except ValueError as e:
                 print(f"Failed assert:\n{e}\n")
+                acceptable_code_block_counter += 1
+                if acceptable_code_block_counter >= 11:
+                    exit(kc, km, "Exited due to too many failures in LLM to generate acceptable code block.")
             
         assistant_reply = Message(role='assistant', content=clean_result)
         conversation_history.append(assistant_reply)
 
-        res = execute_and_capture(kc, code_block)
+        try:
+            res = execute_and_capture(kc, code_block)
+        except TimeoutError as e:
+            exit(kc, km, f"Timed out executing code block. Error:\n{e}")
 
-        if res['error'] is not None:
+        if res['error'] is not None:  # Ignore as res will have an error filed that is default set to None unless error message is generated by jupyter_client.
             e = res['error']
             clean_trace = [strip_ansi(x) for x in e['traceback']]
             trace = [x+'\n' for x in clean_trace]
@@ -365,7 +396,11 @@ def main():
 
             print(full_error)
 
-            state = get_kernel_state(kc) 
+            try:
+                state = get_kernel_state(kc) 
+            except TimeoutError as e:
+                exit(kc, km, f"Timed out getting error kernel state. Error:\n{e}")
+
             print("\n\nError KERNEL STATE IS\n\n")
             print(state)
             print("\n\n\n")
@@ -375,55 +410,58 @@ def main():
             conversation_history.append(error_message)
             query = error_message.content
             archive_error_files(path_settings)
+
             continue
 
         
         html_files_creation_timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         
         if args.steps:
-            dfs = get_all_time_sorted_files(path_settings)
+            try:
+                dfs = get_all_time_sorted_files(path_settings) # Relying on LLM having saved files via prompt instructions.
+            except IndexError as e:
+                exit(kc, km, f"Error {e}:\n\nPossible no data frame was produced or folder {path_settings.output_path} is empty.")
 
-            for dataframe in enumerate(dfs):
-                deliver_to_browser(dataframe[1], path_settings, html_files_creation_timestamp, dataframe[0], open_browser=False)
+
+            for i, df in enumerate(dfs):
+                deliver_to_browser(df, path_settings, html_files_creation_timestamp, i, open_browser=False)
             html_steps_path = file_results(path_settings, html_files_creation_timestamp)
             for html_file in sorted(html_steps_path.iterdir()):
                 if html_file.suffix == '.html':
                     print(f"opening file at {html_file}")
                     webbrowser.open(f"file://{html_file}")
             
-            
-            
         else:
-            df = get_time_sorted_file(path_settings) 
+            try:
+                df = get_time_sorted_file(path_settings) # Relying on LLM having saved files via prompt instructions.
+            except IndexError as e:
+                exit(kc, km, f"Error {e}:\n\nPossible no data frame was produced or folder {path_settings.output_path} is empty.")
+            
             deliver_to_browser(df, path_settings, html_files_creation_timestamp)
 
-        
-
         # Get kernel state to pass to LLM on next iteration
-        state = get_kernel_state(kc)
+        try:
+            state = get_kernel_state(kc)
+        except TimeoutError as e:
+            exit(kc, km, f"Timed out getting post execution kernel state. Error:\n{e}")
+
         print("Post error-free iteration kernel state is:\n\n")
         pprint(state, indent=3)
 
-
-        
-        
-        
         print("\n\nEnter in your follow-up question followed by _END_ or to quit enter in !exit: \n\n")
-        query = acquire_input(km, path_settings, accumulated_prompts)
+        query = acquire_input(km, path_settings, accumulated_user_queries)
         
         if not query:  # Exit and save history
             query = f"The final kernel state is: \n\n{state}\n\nEND"
             conversation_history.append(Message(role='user', content=query))
             save_history(conversation_history, path_settings)
-            sys.exit(0)
+            exit(kc, km, "Process complete.")
 
-        query = f"The current kernel state is: \n\n{state}\n\n" + query
-
-        conversation_history.append(Message(role='user', content=query))
-        
-        #reset_reload_context_compact_history(conversation_history, state, path_settings, query, system_prompt, accumulated_prompts)
-
-
+        if args.compact:
+            reset_reload_context_compact_history(conversation_history, state, path_settings, query, system_prompt, accumulated_user_queries)
+        else:
+            query = f"The current kernel state is: \n\n{state}\n\n" + query
+            conversation_history.append(Message(role='user', content=query))
 
 
 if __name__ == "__main__":

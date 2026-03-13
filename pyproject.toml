@@ -1,7 +1,7 @@
 [project]
 name = "agentic-pandas"
 version = "0.1.0"
-description = "Add your description here"
+description = "A pandas agent."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -9,8 +9,6 @@ dependencies = [
     "jupyter-client>=8.8.0",
     "litellm>=1.81.15",
     "pandas>=3.0.1",
-    "polars>=1.38.1",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.13.1",
-    "rich>=14.3.3",
 ]

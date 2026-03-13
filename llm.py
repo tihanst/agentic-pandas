@@ -2,7 +2,7 @@
 
 import os
 import sys
-from typing import List, Dict, Any
+from typing import List, Dict, Union
 
 from litellm import completion
 
@@ -23,14 +23,14 @@ class LLM():
                 self.key = os.environ["TOGETHER_API_KEY"]
             except KeyError:
                 print(f"KeyError no TOGETHER_API_KEY\nSet environment variable or choose another LLM provider\n")
-                sys.exit(1)
+                raise
 
     
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(provider={self.provider}, model={self.model}, endpoint={self.endpoint}, is_local={self.is_local})"
 
 
-    def completion_call(self, messages: List[Message]):
+    def completion_call(self, messages: List[Dict[str, Union[str, Message]]]):
         
         if self.provider == 'together':
             return completion(self.endpoint, messages) # Note litellm.completion for together requires endpoint as model name
@@ -40,7 +40,6 @@ class LLM():
                               messages=messages,
                               api_base=self.endpoint)
         else:
-            print(f"Model {self} not recognized")
-            sys.exit(1)
-        
+            raise ValueError(f"Model {self} not recognized in LLM call.")
+
     
