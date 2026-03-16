@@ -1,6 +1,9 @@
 import warnings
 import sys
-import readline
+try:
+    import readline  # Unix/macOS only — improves stdin editing; not available on Windows
+except ImportError:
+    pass
 import re
 import os
 import datetime
@@ -203,7 +206,7 @@ def deliver_to_browser(df: pd.DataFrame, path_settings: FilePathConfig, timestam
 
     if open_browser:
         print(f"opening file at {path}")
-        webbrowser.open(f"file://{path}")
+        webbrowser.open(path.as_uri())
 
     return path
 
@@ -289,9 +292,9 @@ def reset_reload_context_compact_history(conversation_history: List[Message], st
 def ensure_directories(path_settings: FilePathConfig) -> None:
     for path_str in (
         path_settings.output_path,
-        path_settings.output_path + '/steps',
+        str(Path(path_settings.output_path) / 'steps'),
         path_settings.html_path,
-        path_settings.html_path + '/steps',
+        str(Path(path_settings.html_path) / 'steps'),
         path_settings.markdown_path,
         path_settings.history_path,
         path_settings.input_path,
@@ -354,8 +357,8 @@ def main():
 
     if args.steps:
         
-        path_settings.output_path = path_settings.output_path + '/steps'
-        path_settings.html_path = path_settings.html_path + '/steps'
+        path_settings.output_path = str(Path(path_settings.output_path) / 'steps')
+        path_settings.html_path = str(Path(path_settings.html_path) / 'steps')
         system_prompt = SYSTEM_PROMPT_WITH_STEPS.format(path=Path(path_settings.output_path).resolve())
     else:
         system_prompt = SYSTEM_PROMPT.format(path=Path(path_settings.output_path).resolve())
@@ -446,7 +449,7 @@ def main():
             for html_file in sorted(html_steps_path.iterdir()):
                 if html_file.suffix == '.html':
                     print(f"opening file at {html_file}")
-                    webbrowser.open(f"file://{html_file}")
+                    webbrowser.open(html_file.as_uri())
             
         else:
             try:
