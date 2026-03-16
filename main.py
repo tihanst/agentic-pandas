@@ -67,7 +67,7 @@ def acquire_input(manager: KernelManager, path_settings: FilePathConfig, accumul
         if stripped.endswith("_END_"):
             lines.append(stripped[:-5])
             parsed_query = "\n".join(lines).strip()
-            print(f"query is : {parsed_query}\n\n")
+            print(f"\nQuery is : {parsed_query}\n\n")
             accumulated_user_queries.append(parsed_query)
             return parsed_query
 
@@ -249,7 +249,7 @@ def save_history(conversation_history: List[Message], path_settings: FilePathCon
         os.mkdir(path)
 
     with open(path / f"{timestamp}_history.txt", 'w', encoding='utf-8') as f:
-        f.write("\n\n".join([x.content for x in conversation_history])) 
+        f.write("\n\n".join([x.content for x in conversation_history[1:]])) # Do not write the SYSTEM message 
 
 def file_results(path_settings: FilePathConfig, timestamp: str = "") -> Path:
 
@@ -327,7 +327,7 @@ def main():
     llm_settings = LLMConfig()
     path_settings = FilePathConfig()
     ensure_directories(path_settings)
-    llm = LLM(llm_settings.provider, llm_settings.llm_api_key, llm_settings.llm_name, llm_settings.llm_endpoint, llm_settings.is_local) 
+    llm = LLM(llm_settings.provider, llm_settings.llm_name, llm_settings.llm_endpoint, llm_settings.is_local) 
 
     system_prompt: str
     accumulated_user_queries: List[str] = []
