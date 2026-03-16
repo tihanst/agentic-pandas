@@ -1,5 +1,6 @@
 import warnings
 import sys
+import readline
 import re
 import os
 import datetime
@@ -252,6 +253,8 @@ def file_results(path_settings: FilePathConfig, timestamp: str = "") -> Path:
     def _helper_file_results(ref_folder: Path) -> Path:
         # Order is oldest to most recent file created
         files: List[Path] = sorted([f for f in  ref_folder.iterdir() if f.is_file()], key=os.path.getmtime)
+        if not files:
+            return ref_folder
         foldername = ref_folder / files[-1].stem
         foldername.mkdir(parents=True, exist_ok=True)
         for f in files:
@@ -283,14 +286,27 @@ def reset_reload_context_compact_history(conversation_history: List[Message], st
     conversation_history.append(Message(role='user', content=query))
     print(conversation_history[-1].content)
 
+def ensure_directories(path_settings: FilePathConfig) -> None:
+    for path_str in (
+        path_settings.output_path,
+        path_settings.output_path + '/steps',
+        path_settings.html_path,
+        path_settings.html_path + '/steps',
+        path_settings.markdown_path,
+        path_settings.history_path,
+        path_settings.input_path,
+    ):
+        Path(path_str).resolve().mkdir(parents=True, exist_ok=True)
+
+
 def exit(kc: BlockingKernelClient, km: KernelManager, message: str | None = None,):
     if km.is_alive():
         km.shutdown_kernel(now=False)
-    
+
     kc.stop_channels()
 
     km.cleanup_resources()
-    
+
     sys.exit(f"{message}")
     
      
@@ -305,8 +321,9 @@ def main():
 
     args = parser.parse_args()
 
-    llm_settings = LLMConfig() 
-    path_settings = FilePathConfig() 
+    llm_settings = LLMConfig()
+    path_settings = FilePathConfig()
+    ensure_directories(path_settings)
     llm = LLM(llm_settings.provider, llm_settings.llm_api_key, llm_settings.llm_name, llm_settings.llm_endpoint, llm_settings.is_local) 
 
     system_prompt: str
