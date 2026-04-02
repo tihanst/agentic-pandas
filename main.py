@@ -62,8 +62,7 @@ def acquire_input(client: BlockingKernelClient, manager: KernelManager, path_set
             continue
 
         if stripped.lstrip().startswith("!exit"):
-            cleanup_and_exit(client, manager, f"Process complete.\nData found in {path_settings.top_level_output_path.resolve()}")
-            break
+            return None
 
         if stripped.endswith("_END_"):
             lines.append(stripped[:-5])
@@ -143,7 +142,7 @@ def execute_and_capture(client: BlockingKernelClient, code: str, timeout: int = 
 def get_time_sorted_file(path_settings: FilePathConfig) -> pd.DataFrame:
 
     directory = Path(path_settings.output_path).resolve()
-    files = sorted([f for f in directory.iterdir() if f.is_file()], key=os.path.getmtime)
+    files = sorted([f for f in directory.iterdir() if f.is_file() and f.suffix == '.csv'], key=os.path.getmtime)
     
     # Select last which is newest        
     df = pd.read_csv(files[-1].resolve(), encoding='utf-8', index_col=0)
@@ -153,7 +152,7 @@ def get_time_sorted_file(path_settings: FilePathConfig) -> pd.DataFrame:
 def get_all_time_sorted_files(path_settings: FilePathConfig) -> List[pd.DataFrame]:
 
     directory = Path(path_settings.output_path).resolve() 
-    files = sorted([f for f in directory.iterdir() if f.is_file()], key=os.path.getmtime)
+    files = sorted([f for f in directory.iterdir() if f.is_file() and f.suffix == '.csv'], key=os.path.getmtime)
 
     # Oldest to newest        
     dfs = [pd.read_csv(x.resolve(), encoding='utf-8', index_col=0) for x in files]
@@ -317,7 +316,7 @@ def main():
     parser.add_argument('-l',
       '--log-level',
       type=str,
-      default='INFO',
+      default='WARNING',
       choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
       help='Set the logging level (default: INFO)'
         )
@@ -356,7 +355,7 @@ def main():
         query = acquire_input(kc, km, path_settings, accumulated_user_queries)
 
     if not query:
-        logger.warning("\nNo query provided.")
+        logger.warning("\nExiting.")
         cleanup_and_exit(kc, km)
 
     if args.steps:
@@ -399,7 +398,7 @@ def main():
                 code_block = extract_code(clean_result)
                 break
             except ValueError as e:
-                logger.warning("Code block not properly delineated:\n%s\n", e)
+                logger.warning("Code block not properly delineated:\n%s\nRetry number %s\n", e, acceptable_code_block_counter+1)
                 acceptable_code_block_counter += 1
                 if acceptable_code_block_counter >= 10:
                     logger.error("Exited due to too many failures in LLM to generate acceptable code block.")
@@ -429,7 +428,7 @@ def main():
                 logger.error("Timed out getting error kernel state. Error:\n%s", e)
                 cleanup_and_exit(kc, km)
 
-            loggier.info(f"\n\nError KERNEL STATE IS\n\n{state}\n\n\n")
+            logger.info(f"\n\nError KERNEL STATE IS\n\n{state}\n\n\n")
             error_message = Message(role='user',
                                     content=f"""The current kernel state is {state}\n\n. The previous code generated the following error, please fix it:\n{full_error}\n\n""")
 

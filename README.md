@@ -66,9 +66,9 @@ helper/
 ├── main.py          # Entry point & agentic REPL loop
 ├── config.py        # Pydantic-settings config (LLMConfig, FilePathConfig)
 ├── llm.py           # LiteLLM wrapper (external API or local Ollama)
+├── logger.py        # Logging setup (stdout/stderr split, configurable level)
 ├── message.py       # Message pydantic model (role / content)
 ├── prompts.py       # System prompts + STATE_PROBE + LOAD_STATE snippets
-├── quickview.py     # Standalone CSV → HTML browser utility
 ├── markdown_files/  # Example prompts (used with -i flag)
 ├── pyproject.toml
 └── .env             # Local config (not committed)
@@ -81,9 +81,9 @@ helper/
 | `main.py` | REPL loop, kernel lifecycle, error retry, HTML delivery |
 | `config.py` | Loads all settings from `.env` via pydantic-settings |
 | `llm.py` | `completion_call()` — routes to external API (via LiteLLM) or local Ollama |
+| `logger.py` | Configures the `agentic_pandas` logger; INFO/DEBUG → stdout, WARNING+ → stderr |
 | `message.py` | `Message(role, content)` — typed conversation turn |
 | `prompts.py` | System prompts defining LLM behaviour; `STATE_PROBE` (kernel introspection); `LOAD_STATE` (CSV loader) |
-| `quickview.py` | Standalone script to view an existing CSV output in the browser |
 
 ---
 
@@ -94,10 +94,11 @@ The `-s` / `--steps` flag switches between two distinct output behaviours:
 ```
 Default mode (-s NOT set)                    Steps mode (-s set)
 ─────────────────────────────────            ──────────────────────────────────────
-LLM saves one final CSV to:                  LLM saves each intermediate step to:
+LLM saves one final CSV + XLSX to:           LLM saves each intermediate step to:
   output_files/                                output_files/steps/
     final_result_df_<name>_<ts>.csv              STEP_1_<name>_<ts>.csv
-                                                 STEP_2_<name>_<ts>.csv
+    final_result_df_<name>_<ts>.xlsx             STEP_2_<name>_<ts>.csv
+                                             Final step also saved as .xlsx
 App reads newest CSV → one HTML tab          App reads all CSVs → one tab per step
 ```
 
@@ -198,6 +199,9 @@ python main.py -s
 
 # Compact conversation history to save tokens
 python main.py -c
+
+# Set logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL — default: WARNING)
+python main.py -l DEBUG
 
 # Combinations
 python main.py -d my_data.csv -i prompt.md -s
@@ -305,22 +309,6 @@ Before every LLM call the `STATE_PROBE` snippet runs inside the kernel and emits
 ## Conversation History
 
 On exit (via `!exit` or EOF), the full conversation is saved to `HISTORY_PATH` as a timestamped `.txt` file containing all message contents. This is useful for auditing exactly what the agent did across a session.
-
----
-
-## `quickview.py`
-
-A small standalone utility to re-render an existing CSV output in the browser without running the full agent:
-
-```python
-from quickview import deliver_to_browser
-
-# View a final result
-deliver_to_browser("final_result_df_sales_summary_2026-03-16_10-00-00.csv")
-
-# View a steps-mode output
-deliver_to_browser("STEP_1_pivot_2026-03-16_10-00-00.csv", steps=True)
-```
 
 ---
 
