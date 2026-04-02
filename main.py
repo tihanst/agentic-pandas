@@ -62,8 +62,7 @@ def acquire_input(client: BlockingKernelClient, manager: KernelManager, path_set
             continue
 
         if stripped.lstrip().startswith("!exit"):
-            cleanup_and_exit(client, manager, f"Process complete.\nData found in {path_settings.top_level_output_path.resolve()}")
-            break
+            return None
 
         if stripped.endswith("_END_"):
             lines.append(stripped[:-5])
@@ -356,7 +355,7 @@ def main():
         query = acquire_input(kc, km, path_settings, accumulated_user_queries)
 
     if not query:
-        logger.warning("\nNo query provided.")
+        logger.warning("\nExiting.")
         cleanup_and_exit(kc, km)
 
     if args.steps:
@@ -399,7 +398,7 @@ def main():
                 code_block = extract_code(clean_result)
                 break
             except ValueError as e:
-                logger.warning("Code block not properly delineated:\n%s\n", e)
+                logger.warning("Code block not properly delineated:\n%s\nRetry number %s\n", e, acceptable_code_block_counter+1)
                 acceptable_code_block_counter += 1
                 if acceptable_code_block_counter >= 10:
                     logger.error("Exited due to too many failures in LLM to generate acceptable code block.")
