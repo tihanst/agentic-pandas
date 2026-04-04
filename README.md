@@ -150,7 +150,7 @@ my_project/
 │   └── steps/       # CSVs for steps mode (-s)
 ├── html_files/      # Rendered HTML result tables
 │   └── steps/       # HTML for steps mode (-s)
-├── input_files/     # Place input CSV files here (used with -d)
+├── data_input_files/     # Place input CSV files here (used with -d)
 ├── markdown_files/  # Markdown prompt files (used with -i)
 └── history/         # Saved conversation histories
 ```
@@ -159,13 +159,13 @@ Any individual path can be overridden in `.env` if needed (e.g. `INPUT_PATH=/dat
 
 ### First-Time Use with `-d` (Loading a Data File)
 
-> **Important:** On the very first run, the subdirectory tree does not exist yet, so `input_files/` will not be there before you launch. There are two options:
+> **Important:** On the very first run, the subdirectory tree does not exist yet, so `data_input_files/` will not be there before you launch. There are two options:
 >
 > **Option A — let the program create it for you:**
-> Run `python main.py` once without `-d` and immediately type `!exit`. The program will create the full directory tree on startup. Then place your CSV in `<TOP_LEVEL_OUTPUT_PATH>/input_files/` and run again with `-d my_data.csv`.
+> Run `python main.py` once without `-d` and immediately type `!exit`. The program will create the full directory tree on startup. Then place your CSV in `<TOP_LEVEL_OUTPUT_PATH>/data_input_files/` and run again with `-d my_data.csv`.
 >
 > **Option B — run with `-d` anyway:**
-> The directories are created at the very start of execution (before the file is read), so even if the first attempt fails because the file is not yet there, the file system will be fully set up by the time the error occurs. Simply place your CSV in `<TOP_LEVEL_OUTPUT_PATH>/input_files/` and re-run.
+> The directories are created at the very start of execution (before the file is read), so even if the first attempt fails because the file is not yet there, the file system will be fully set up by the time the error occurs. Simply place your CSV in `<TOP_LEVEL_OUTPUT_PATH>/data_input_files/` and re-run.
 
 ### API Keys
 

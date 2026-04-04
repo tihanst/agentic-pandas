@@ -31,7 +31,7 @@ class FilePathConfig(BaseSettings):
         if not self.history_path:
             self.history_path = self.top_level_output_path / "history"
         if not self.input_path:
-            self.input_path = self.top_level_output_path / "input_files"
+            self.input_path = self.top_level_output_path / "data_input_files"
         return self
 
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
