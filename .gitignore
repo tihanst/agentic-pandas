@@ -219,7 +219,7 @@ __marimo__/
 tests/
 markdown_files/
 tmp/
-input_files/
+data_input_files/
 history/
 
 #stuff
