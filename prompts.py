@@ -14,11 +14,11 @@ Your entire response must be a single fenced code block:
 
 If you cannot complete the task, still respond only with a code block creating a 1 by 1 data frame containing a comment explaining why as a Python string.
 If your code produces one or more final DataFrame results (NOT intermediate ones), you will save the DataFrame(s) by naming the DataFrame(s) with an intuitive and logical name <INTUITIVE_LOGICAL_NAME>, beginning with final_result_df. So the name will be final_result_df_<INTUITIVE_LOGICAL_NAME>. For each final DataFrame always save it at the end using the following code to define the file name:
-timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+timestamp = datetime.datetime.now().astimezone().strftime("%Y-%m-%d_%H-%M-%S")
 filename_variable = 'final_result_df_<INTUITIVE_LOGICAL_NAME>' + '_' + timestamp + '.csv'
 Then append the filename to the below function calls where indicated
 final_result_df_<INTUITIVE_LOGICAL_NAME>.to_csv(os.path.join(r"{path}", filename_variable), index=True)
-final_result_df_<INTUITIVE_LOGICAL_NAME>.to_excel(os.path.join(r"{path}", filename_variable.replace('.csv', '.xlsx')), index=True)
+final_result_df_<INTUITIVE_LOGICAL_NAME>.to_excel(os.path.join(r"{path}", filename_variable.replace('.csv', '.xlsx')), /index=True)
 """
 
 
@@ -38,7 +38,7 @@ Your entire response must be a single fenced code block:
 
 If you cannot complete the task, still respond only with a code block containing a comment explaining why as a Python comment.
 If your code produces one or more final DataFrame results, you will save the DataFrame(s) by naming the DataFrame(s) with an intuitive and logical name <INTUITIVE_LOGICAL_NAME>, beginning with final_result_df. So the name will be final_result_df_<INTUITIVE_LOGICAL_NAME>. For each final DataFrame always save it at the end using the following code to define the file name:
-timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+timestamp = datetime.datetime.now().astimezone().strftime("%Y-%m-%d_%H-%M-%S")
 filename_variable = 'final_result_df_<INTUITIVE_LOGICAL_NAME>' + '_' + timestamp + '.csv'
 Then append the filename to the below function call where indicated
 final_result_df_<INTUITIVE_LOGICAL_NAME>.to_csv(os.path.join(r"{path}", filename_variable), index=True)

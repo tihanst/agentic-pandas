@@ -216,16 +216,8 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Folders added
-tests/
-markdown_files/
 tmp/
-data_input_files/
-history/
+input_output_stuff/
 
 #stuff
 **.csv
-pseudocode.txt
-.claudeignore
-CLAUDE.md
-quickview.py
-output_stuff/

@@ -9,12 +9,16 @@ import os
 import datetime
 import json
 import shutil
+import subprocess
+from subprocess import Popen
+import uuid
 import webbrowser
 import argparse
 import queue
 from typing import List, Dict, Any, Union, NoReturn
 from pathlib import Path
 import pprint
+import time
 
 import pandas as pd
 from jupyter_client.manager import KernelManager
@@ -30,23 +34,86 @@ from prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_WITH_STEPS, STATE_PROBE, LOAD_S
 class CSVLoadError(Exception):
     pass
 
+CONNECTION_FILE = "/tmp/kernel_connection.json"
+
+CONNECTION = {
+    "transport": "tcp",
+    "ip": "0.0.0.0",
+    #"ip": "127.0.0.1",
+    "shell_port":   5555,
+    "iopub_port":   5556,
+    "stdin_port":   5557,
+    "hb_port":      5558,
+    "control_port": 5559,
+    "signature_scheme": "hmac-sha256",
+    "key": str(uuid.uuid4()),
+}
+
+CONTAINER_NAME: str = f"jupyter-pandas-kernel-{uuid.uuid4().hex[:8]}"
+
+
+
 warnings.filterwarnings("ignore")
 logger = get_logger("agentic_pandas.main")
 
 
-def acquire_input(client: BlockingKernelClient, manager: KernelManager, path_settings: FilePathConfig, accumulated_user_queries: List[str], file_name: str | None = None) -> str | None:
+def start_kernel_container(path_settings: FilePathConfig) -> Popen[bytes]:
+    conn_path = Path(CONNECTION_FILE)
+    conn_path.write_text(json.dumps(CONNECTION))
+
+    # Verify what was written matches CONNECTION
+    written = json.loads(conn_path.read_text())
+    print(f"Written key: {written['key']}")
+    print(f"CONNECTION key: {CONNECTION['key']}")
+
+    try:
+        tz_link = os.readlink('/etc/localtime')
+        tz_name = tz_link.split('/zoneinfo/')[-1]
+    except (OSError, ValueError):
+        tz_name = datetime.datetime.now().astimezone().tzname()
+
+    top_level_name = path_settings.top_level_output_path.name
+    cmd = [
+        "docker", "run", "--platform", "linux/arm64", "--rm",
+        "--name", CONTAINER_NAME,
+        "-e", f"TZ={tz_name}",
+        "-v", f"{conn_path}:/tmp/kernel.json:ro",
+        "-v", f"{path_settings.top_level_output_path.resolve()}:/sandbox/{top_level_name}:rw",
+        "-p", "127.0.0.1:5555:5555",
+        "-p", "127.0.0.1:5556:5556",
+        "-p", "127.0.0.1:5557:5557",
+        "-p", "127.0.0.1:5558:5558",
+        "-p", "127.0.0.1:5559:5559",
+        "jupyter-pandas-kernel:latest",
+        "/tmp/kernel.json",
+    ]
+
+    return subprocess.Popen(cmd) 
+
+
+def resolve_input_file(given: str, default_dir: Path) -> Path:
+    """Return path to the file within default_dir, copying it there first if a path was given."""
+    p = Path(given)
+    if p.parent == Path('.'):
+        return default_dir / p.name
+    resolved = p.resolve()
+    dest = default_dir / resolved.name
+    if resolved != dest:
+        shutil.copy2(resolved, dest)
+    return dest
+
+
+def acquire_input(path_settings: FilePathConfig, accumulated_user_queries: List[str], file_name: str | None = None) -> str | None:
     
     lines: List[str] = []
     
     # If file option is passed on CLI read it and execute
     if file_name is not None:
-        path = Path(path_settings.markdown_path)
-        if not path.is_dir():
-            Path.mkdir(path.resolve())
-        with open(path.resolve() / file_name, encoding="utf-8") as f:
+        file_path = resolve_input_file(file_name, Path(path_settings.markdown_path).resolve())
+        with open(file_path, encoding="utf-8") as f:
             query = f.read().rstrip()
             accumulated_user_queries.append(query)
-            return query    
+            return query
 
     # If file option is not passed on CLI read from stdin
     while True:
@@ -207,11 +274,15 @@ def deliver_to_browser(df: pd.DataFrame, path_settings: FilePathConfig, timestam
     return path
 
 
+def to_container_path(host_path: Path, path_settings: FilePathConfig) -> str:
+    rel = Path(host_path).relative_to(path_settings.top_level_output_path)
+    return f"/sandbox/{path_settings.top_level_output_path.name}/{rel}"
+
+
 def execute_csv_load(client: BlockingKernelClient, path_settings: FilePathConfig, filename: str):
-    path = Path(path_settings.input_path).resolve()
-    if not path.is_dir():
-        Path.mkdir(path)
-    x = execute_and_capture(client, LOAD_STATE.format(filepath=str(path), file=filename))
+    file_path = resolve_input_file(filename, Path(path_settings.input_path).resolve())
+    container_input_path = to_container_path(path_settings.input_path, path_settings)
+    x = execute_and_capture(client, LOAD_STATE.format(filepath=container_input_path, file=file_path.name))
     if x['error']:
         clean_traceback = [strip_ansi(y) for y in x['error']['traceback']]
         raise CSVLoadError(f"Failed to load CSV. Traceback:\n{''.join(clean_traceback)}")
@@ -294,13 +365,20 @@ def ensure_directories(path_settings: FilePathConfig) -> None:
         Path(path_str).resolve().mkdir(parents=True, exist_ok=True)
 
 
-def cleanup_and_exit(kc: BlockingKernelClient, km: KernelManager, message: str | None = None,) -> NoReturn:
-    if km.is_alive():
-        km.shutdown_kernel(now=False)
+def cleanup_and_exit(kc: BlockingKernelClient, proc: Popen[bytes], message: str | None = None,) -> NoReturn:
 
     kc.stop_channels()
 
-    km.cleanup_resources()
+    subprocess.run(["docker", "stop", CONTAINER_NAME], capture_output=True)
+
+    if proc.poll() is None: # still running
+        proc.terminate()
+
+        try:
+            proc.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
 
     sys.exit(f"{message}")
     
@@ -333,11 +411,32 @@ def main():
     system_prompt: str
     accumulated_user_queries: List[str] = []
 
-    km = KernelManager(kernel_name='python3')
-    km.start_kernel()
-    kc = km.client()
-    kc.start_channels()
-    kc.wait_for_ready()
+    
+
+    # km = KernelManager(kernel_name='python3')
+    # km.start_kernel()
+    # kc = km.client()
+    # kc.start_channels()
+    # kc.wait_for_ready()
+    proc = start_kernel_container(path_settings)
+    try:
+        time.sleep(5)
+        kc = BlockingKernelClient()
+        print(CONNECTION)
+        kc.load_connection_info(CONNECTION)
+        kc.start_channels()
+        kc.wait_for_ready(timeout=30)
+
+    except Exception as e:
+        proc.terminate()
+        try:
+            proc.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        raise
+    
+
 
     conversation_history: List[Message] = []
 
@@ -346,25 +445,24 @@ def main():
             execute_csv_load(kc, path_settings, args.datafile)
         except (TimeoutError, CSVLoadError) as e:
             logger.error("Failed to load csv file. Error:\n%s", e)
-            cleanup_and_exit(kc, km)
+            cleanup_and_exit(kc, proc)
 
     if args.instructions:
-        query = acquire_input(kc, km, path_settings, accumulated_user_queries, args.instructions)
+        query = acquire_input(path_settings, accumulated_user_queries, args.instructions)
     else:    
         print("\nEnter in your prompt ending in _END_, or enter in !exit: \n\n")
-        query = acquire_input(kc, km, path_settings, accumulated_user_queries)
+        query = acquire_input(path_settings, accumulated_user_queries)
 
     if not query:
         logger.warning("\nExiting.")
-        cleanup_and_exit(kc, km)
+        cleanup_and_exit(kc, proc)
 
     if args.steps:
-        
-        path_settings.output_path = str(Path(path_settings.output_path) / 'steps')
-        path_settings.html_path = str(Path(path_settings.html_path) / 'steps')
-        system_prompt = SYSTEM_PROMPT_WITH_STEPS.format(path=Path(path_settings.output_path).resolve())
+        path_settings.output_path = Path(path_settings.output_path) / 'steps'
+        path_settings.html_path = Path(path_settings.html_path) / 'steps'
+        system_prompt = SYSTEM_PROMPT_WITH_STEPS.format(path=to_container_path(path_settings.output_path, path_settings))
     else:
-        system_prompt = SYSTEM_PROMPT.format(path=Path(path_settings.output_path).resolve())
+        system_prompt = SYSTEM_PROMPT.format(path=to_container_path(path_settings.output_path, path_settings))
             
     conversation_history.append(Message(role='system', content=system_prompt))
     
@@ -373,7 +471,7 @@ def main():
         state = get_kernel_state(kc)
     except TimeoutError as e:
         logger.error("Timed out executing state probe while getting initial kernel state. Error:\n%s", e)
-        cleanup_and_exit(kc, km)
+        cleanup_and_exit(kc, proc)
 
     query = f"The current kernel state is: \n\n{state}\n\n" + query
 
@@ -402,7 +500,7 @@ def main():
                 acceptable_code_block_counter += 1
                 if acceptable_code_block_counter >= 10:
                     logger.error("Exited due to too many failures in LLM to generate acceptable code block.")
-                    cleanup_and_exit(kc, km)
+                    cleanup_and_exit(kc, proc)
             
         assistant_reply = Message(role='assistant', content=clean_result)
         conversation_history.append(assistant_reply)
@@ -411,7 +509,7 @@ def main():
             res = execute_and_capture(kc, code_block)
         except TimeoutError as e:
             logger.error("Timed out executing code block. Error:\n%s", e)
-            cleanup_and_exit(kc, km)
+            cleanup_and_exit(kc, proc)
 
         if res['error'] is not None:  # Ignore as res will have an error filed that is default set to None unless error message is generated by jupyter_client.
             e = res['error']
@@ -426,7 +524,7 @@ def main():
                 state = get_kernel_state(kc) 
             except TimeoutError as e:
                 logger.error("Timed out getting error kernel state. Error:\n%s", e)
-                cleanup_and_exit(kc, km)
+                cleanup_and_exit(kc, proc)
 
             logger.info(f"\n\nError KERNEL STATE IS\n\n{state}\n\n\n")
             error_message = Message(role='user',
@@ -446,7 +544,7 @@ def main():
                 dfs = get_all_time_sorted_files(path_settings) # Relying on LLM having saved files via prompt instructions.
             except IndexError as e:
                 logger.error("Error %s:\n\nPossible no data frame was produced or folder %s is empty.", e, path_settings.top_level_output_path)
-                cleanup_and_exit(kc, km)
+                cleanup_and_exit(kc, proc)
 
 
             for i, df in enumerate(dfs):
@@ -462,7 +560,7 @@ def main():
                 df = get_time_sorted_file(path_settings) # Relying on LLM having saved files via prompt instructions.
             except IndexError as e:
                 logger.error("Error %s:\n\nPossible no data frame was produced or folder %s is empty.", e, path_settings.output_path)
-                cleanup_and_exit(kc, km)
+                cleanup_and_exit(kc, proc)
             
             deliver_to_browser(df, path_settings, html_files_creation_timestamp)
 
@@ -471,19 +569,19 @@ def main():
             state = get_kernel_state(kc)
         except TimeoutError as e:
             logger.error("Timed out getting post execution kernel state. Error:\n%s", e)
-            cleanup_and_exit(kc, km)
+            cleanup_and_exit(kc, proc)
 
         logger.debug("Post error-free iteration kernel state is:\n\n%s\n\n", pprint.pformat(state, indent=3))
 
         print("\n\nEnter in your follow-up question followed by _END_ or to quit enter in !exit: \n\n")
-        query = acquire_input(kc, km, path_settings, accumulated_user_queries)
+        query = acquire_input(path_settings, accumulated_user_queries)
         
         if not query:  # Exit and save history
             query = f"The final kernel state is: \n\n{state}\n\nEND"
             logger.info(query)
             conversation_history.append(Message(role='user', content=query))
             save_history(conversation_history, path_settings)
-            cleanup_and_exit(kc, km, f"Process complete.\nData found in {path_settings.top_level_output_path.resolve()}")
+            cleanup_and_exit(kc, proc, f"Process complete.\nData found in {path_settings.top_level_output_path.resolve()}")
 
         if args.compact:
             reset_reload_context_compact_history(conversation_history, state, path_settings, query, system_prompt, accumulated_user_queries)

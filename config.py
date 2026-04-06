@@ -22,6 +22,8 @@ class FilePathConfig(BaseSettings):
 
     @model_validator(mode='after')
     def set_derived_paths(self) -> 'FilePathConfig':
+        if not self.top_level_output_path.is_absolute():
+            self.top_level_output_path = (Path(__file__).parent / self.top_level_output_path).resolve()
         if not self.output_path:
             self.output_path = self.top_level_output_path / "output_files"
         if not self.html_path:
