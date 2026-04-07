@@ -23,10 +23,12 @@ from typing import List, Dict, Any, NoReturn
 from pathlib import Path
 import pprint
 import time
+import asyncio
 
 import pandas as pd
 from jupyter_client.manager import KernelManager
 from jupyter_client.blocking.client import BlockingKernelClient
+from jupyter_client.asynchronous.client import AsyncKernelClient
 
 from logger import get_logger, set_logger
 from config import LLMConfig, FilePathConfig
@@ -163,10 +165,10 @@ def extract_code(text: str) -> str:
     return text[10:-4]
 
 
-def get_kernel_state(client: BlockingKernelClient) -> Dict[str, Any]:
+async def get_kernel_state(client: BlockingKernelClient) -> Dict[str, Any]:
     
     try:
-        result = execute_and_capture(client, STATE_PROBE)
+        result = await execute_and_capture(client, STATE_PROBE)
     except TimeoutError:
         raise
 
@@ -180,7 +182,11 @@ def get_kernel_state(client: BlockingKernelClient) -> Dict[str, Any]:
     return {}
 
 
-def execute_and_capture(client: BlockingKernelClient, code: str, timeout: int = 30) -> Dict[str, str]:
+async def execute_and_capture(client: BlockingKernelClient, code: str, timeout: int = 30) -> Dict[str, str]:
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _execute_and_capture, client, code, timeout)
+
+def _execute_and_capture(client: BlockingKernelClient, code: str, timeout: int = 30) -> Dict[str, str]:
     
     msg_id = client.execute(code)
     outputs = []
@@ -289,10 +295,10 @@ def to_container_path(host_path: Path, path_settings: FilePathConfig) -> str:
     return f"/sandbox/{path_settings.top_level_output_path.name}/{rel}"
 
 
-def execute_csv_load(client: BlockingKernelClient, path_settings: FilePathConfig, filename: str):
+async def execute_csv_load(client: BlockingKernelClient, path_settings: FilePathConfig, filename: str):
     file_path = resolve_input_file(filename, Path(path_settings.input_path).resolve())
     container_input_path = to_container_path(path_settings.input_path, path_settings)
-    x = execute_and_capture(client, LOAD_STATE.format(filepath=container_input_path, file=file_path.name))
+    x = await execute_and_capture(client, LOAD_STATE.format(filepath=container_input_path, file=file_path.name))
     if x['error']:
         clean_traceback = [strip_ansi(y) for y in x['error']['traceback']]
         raise CSVLoadError(f"Failed to load CSV. Traceback:\n{''.join(clean_traceback)}")
@@ -394,7 +400,7 @@ def cleanup_and_exit(kc: BlockingKernelClient, proc: Popen[bytes], message: str 
     
      
 
-def main():
+async def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--datafile', type=str,  help='full csv filename')
@@ -427,6 +433,7 @@ def main():
         kc = BlockingKernelClient()
         logger.info(f"\nConnection:\n{CONNECTION}")
         kc.load_connection_info(CONNECTION)
+        kc.session.key = CONNECTION['key'].encode()
         kc.start_channels()
         kc.wait_for_ready(timeout=30)
 
@@ -448,7 +455,7 @@ def main():
 
     if args.datafile:
         try:
-            execute_csv_load(kc, path_settings, args.datafile)
+            await execute_csv_load(kc, path_settings, args.datafile)
         except (TimeoutError, CSVLoadError) as e:
             logger.error("Failed to load csv file. Error:\n%s", e)
             cleanup_and_exit(kc, proc)
@@ -474,7 +481,7 @@ def main():
     
     
     try:
-        state = get_kernel_state(kc)
+        state = await get_kernel_state(kc)
     except TimeoutError as e:
         logger.error("Timed out executing state probe while getting initial kernel state. Error:\n%s", e)
         cleanup_and_exit(kc, proc)
@@ -512,7 +519,7 @@ def main():
         conversation_history.append(assistant_reply)
 
         try:
-            res = execute_and_capture(kc, code_block)
+            res = await execute_and_capture(kc, code_block)
         except TimeoutError as e:
             logger.error("Timed out executing code block. Error:\n%s", e)
             cleanup_and_exit(kc, proc)
@@ -527,7 +534,7 @@ def main():
             logger.warning(full_error)
 
             try:
-                state = get_kernel_state(kc) 
+                state = await get_kernel_state(kc) 
             except TimeoutError as e:
                 logger.error("Timed out getting error kernel state. Error:\n%s", e)
                 cleanup_and_exit(kc, proc)
@@ -572,7 +579,7 @@ def main():
 
         # Get kernel state to pass to LLM on next iteration
         try:
-            state = get_kernel_state(kc)
+            state = await get_kernel_state(kc)
         except TimeoutError as e:
             logger.error("Timed out getting post execution kernel state. Error:\n%s", e)
             cleanup_and_exit(kc, proc)
@@ -597,4 +604,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
