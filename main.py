@@ -1,4 +1,6 @@
 import warnings
+warnings.filterwarnings("ignore")
+
 import sys
 try:
     import readline  # Unix/macOS only — improves stdin editing; not available on Windows
@@ -9,13 +11,15 @@ import os
 import datetime
 import json
 import shutil
+from functools import partial
+import signal
 import subprocess
 from subprocess import Popen
 import uuid
 import webbrowser
 import argparse
 import queue
-from typing import List, Dict, Any, Union, NoReturn
+from typing import List, Dict, Any, NoReturn
 from pathlib import Path
 import pprint
 import time
@@ -53,8 +57,13 @@ CONTAINER_NAME: str = f"jupyter-pandas-kernel-{uuid.uuid4().hex[:8]}"
 
 
 
-warnings.filterwarnings("ignore")
+# warnings.filterwarnings("ignore")
 logger = get_logger("agentic_pandas.main")
+
+
+def _signal_handler(kc: BlockingKernelClient, proc: Popen[bytes], signum, frame) -> NoReturn:
+    logger.warning(f"\nReceived signal {signum}, shutting down.\n")
+    cleanup_and_exit(kc, proc, "Interrupted and exiting.")
 
 
 def start_kernel_container(path_settings: FilePathConfig) -> Popen[bytes]:
@@ -88,7 +97,8 @@ def start_kernel_container(path_settings: FilePathConfig) -> Popen[bytes]:
         "/tmp/kernel.json",
     ]
 
-    return subprocess.Popen(cmd) 
+    # return subprocess.Popen(cmd)
+    return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) 
 
 
 def resolve_input_file(given: str, default_dir: Path) -> Path:
@@ -405,24 +415,17 @@ def main():
 
     llm_settings = LLMConfig()
     path_settings = FilePathConfig()
+
     ensure_directories(path_settings)
+
     llm = LLM(llm_settings.provider, llm_settings.llm_name, llm_settings.llm_endpoint, llm_settings.is_local) 
 
-    system_prompt: str
-    accumulated_user_queries: List[str] = []
 
-    
-
-    # km = KernelManager(kernel_name='python3')
-    # km.start_kernel()
-    # kc = km.client()
-    # kc.start_channels()
-    # kc.wait_for_ready()
     proc = start_kernel_container(path_settings)
     try:
-        time.sleep(5)
+        time.sleep(1)
         kc = BlockingKernelClient()
-        print(CONNECTION)
+        logger.info(f"\nConnection:\n{CONNECTION}")
         kc.load_connection_info(CONNECTION)
         kc.start_channels()
         kc.wait_for_ready(timeout=30)
@@ -436,8 +439,11 @@ def main():
             proc.wait()
         raise
     
+    wrapped_signal_handler = partial(_signal_handler, kc, proc)
+    signal.signal(signal.SIGINT, wrapped_signal_handler)
 
-
+    system_prompt: str
+    accumulated_user_queries: List[str] = []
     conversation_history: List[Message] = []
 
     if args.datafile:
@@ -454,7 +460,7 @@ def main():
         query = acquire_input(path_settings, accumulated_user_queries)
 
     if not query:
-        logger.warning("\nExiting.")
+        logger.warning("\nNo prompt provided. Exiting.")
         cleanup_and_exit(kc, proc)
 
     if args.steps:
@@ -479,7 +485,7 @@ def main():
     conversation_history.append(query_msg)
 
     
-    while True:        
+    while True:
 
         logger.info(f"Accumulated prompts are:\n\n {accumulated_user_queries}")
 

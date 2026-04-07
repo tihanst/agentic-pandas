@@ -1,6 +1,6 @@
 # Agentic Pandas
 
-A REPL-style agentic loop that lets an LLM write and execute pandas code in a live Jupyter kernel. You describe data transformations in plain language (or a markdown file), and the agent generates, runs, and iteratively fixes Python/pandas code until the task succeeds — then renders the result as an HTML table in your browser.
+A REPL-style agentic loop that lets an LLM write and execute pandas code in a sandboxed Jupyter kernel running inside a Docker container. You describe data transformations in plain language (or a markdown file), and the agent generates, runs, and iteratively fixes Python/pandas code until the task succeeds — then renders the result as an HTML table in your browser.
 
 ---
 
@@ -20,7 +20,7 @@ A REPL-style agentic loop that lets an LLM write and execute pandas code in a li
        ▼                                 └─────────────────────────────────┘
   ┌─────────────────┐   error?   ┌──────────────────────────────────┐
   │ Jupyter Kernel  │ ─────────► │  Append traceback to history     │
-  │   (in-process)  │            │  → retry LLM call                │
+  │ (Docker container)│          │  → retry LLM call                │
   └────────┬────────┘            └──────────────────────────────────┘
            │ success
            ▼
@@ -39,13 +39,13 @@ A REPL-style agentic loop that lets an LLM write and execute pandas code in a li
 
 ### Step-by-Step Walkthrough
 
-1. **Startup** — a `jupyter_client` kernel is launched in-process and all configured directories are created.
-2. **Input** — the user types a prompt terminated with `_END_`, or a markdown file is passed via `-i`. Optionally a CSV is pre-loaded into the kernel as `initial_data_frame` via `-d`.
+1. **Startup** — a Docker container running an IPython kernel is launched and all configured directories are created. The kernel communicates with the host over TCP ports 5555–5559.
+2. **Input** — the user types a prompt terminated with `_END_`, or a markdown file is passed via `-i`. Optionally a CSV is pre-loaded into the kernel as `initial_data_frame` via `-d`. Both `-i` and `-d` accept either a bare filename (resolved relative to the configured directory) or a full path from anywhere on the filesystem — the file is copied into the expected directory automatically.
 3. **State probe** — `STATE_PROBE` (a snippet of introspection code) is executed in the kernel; its JSON output describes every DataFrame, Series, and scalar currently in scope.
 4. **LLM call** — the full conversation history plus the current kernel state are sent to the LLM via [LiteLLM](#litellm-the-llm-gateway), which is instructed to reply with **only** a fenced Python code block.
-5. **Code extraction & execution** — the code block is stripped from the response and executed in the kernel via `execute_and_capture()`.
+5. **Code extraction & execution** — the code block is stripped from the response and executed in the kernel via `execute_and_capture()`. Because the kernel runs inside the container, all file paths in generated code refer to the container's `/sandbox/` mount point.
 6. **Error handling** — if the kernel returns a traceback, it is cleaned of ANSI codes, appended to the conversation as a user message, and the loop retries automatically from step 4.
-7. **Output delivery** — on success the agent reads the CSV(s) the LLM wrote to `OUTPUT_PATH`, renders them as scrollable HTML tables, and opens them in the browser.
+7. **Output delivery** — on success the agent reads the CSV(s) the LLM wrote to the output path inside the container (mirrored on the host via the volume mount), renders them as scrollable HTML tables, and opens them in the browser.
 8. **Follow-up** — the user can continue asking questions; the kernel state is re-probed before each new LLM call so the model always sees up-to-date variable state.
 
 ---
@@ -62,14 +62,14 @@ A REPL-style agentic loop that lets an LLM write and execute pandas code in a li
 ## Architecture
 
 ```
-helper/
+sandboxing/
 ├── main.py          # Entry point & agentic REPL loop
 ├── config.py        # Pydantic-settings config (LLMConfig, FilePathConfig)
 ├── llm.py           # LiteLLM wrapper (external API or local Ollama)
 ├── logger.py        # Logging setup (stdout/stderr split, configurable level)
 ├── message.py       # Message pydantic model (role / content)
 ├── prompts.py       # System prompts + STATE_PROBE + LOAD_STATE snippets
-├── markdown_files/  # Example prompts (used with -i flag)
+├── Dockerfile       # Builds the sandboxed Jupyter kernel image
 ├── pyproject.toml
 └── .env             # Local config (not committed)
 ```
@@ -78,12 +78,13 @@ helper/
 
 | Module | Responsibility |
 |---|---|
-| `main.py` | REPL loop, kernel lifecycle, error retry, HTML delivery |
+| `main.py` | REPL loop, Docker kernel lifecycle, error retry, HTML delivery |
 | `config.py` | Loads all settings from `.env` via pydantic-settings |
 | `llm.py` | `completion_call()` — routes to external API (via LiteLLM) or local Ollama |
 | `logger.py` | Configures the `agentic_pandas` logger; INFO/DEBUG → stdout, WARNING+ → stderr |
 | `message.py` | `Message(role, content)` — typed conversation turn |
 | `prompts.py` | System prompts defining LLM behaviour; `STATE_PROBE` (kernel introspection); `LOAD_STATE` (CSV loader) |
+| `Dockerfile` | Defines the sandboxed Python/pandas kernel image (`jupyter-pandas-kernel:latest`) |
 
 ---
 
@@ -108,19 +109,26 @@ After a successful run, `file_results()` archives all CSVs and HTML files into a
 
 ## Installation
 
-Requires Python 3.12+ and [`uv`](https://github.com/astral-sh/uv).
+Requires Python 3.12+, [`uv`](https://github.com/astral-sh/uv), and [Docker](https://docs.docker.com/get-docker/).
 
 ```bash
 git clone <repo>
-cd helper
+cd sandboxing
+
+# Install Python dependencies
 uv sync
+
+# Build the Docker image for the sandboxed kernel (one-time setup)
+docker build -t jupyter-pandas-kernel:latest .
 ```
+
+> **Note:** The Docker image must be built before running the agent. It packages the IPython kernel along with pandas, numpy, matplotlib, and openpyxl inside a sandboxed container. Rebuild the image if you add new packages to the Dockerfile.
 
 ---
 
 ## Configuration
 
-Create a `.env` file in the `helper/` directory:
+Create a `.env` file in the `sandboxing/` directory:
 
 ```dotenv
 # LLM provider identifier (e.g. "together", "openai", "anthropic", "ollama")
@@ -155,17 +163,9 @@ my_project/
 └── history/         # Saved conversation histories
 ```
 
+The output directory is mounted into the Docker container at `/sandbox/<top_level_name>/`, so all file I/O by generated code goes to paths under that mount point. The host path and the container path stay in sync automatically.
+
 Any individual path can be overridden in `.env` if needed (e.g. `INPUT_PATH=/data/my_csv_files`). Paths not specified are always derived from `TOP_LEVEL_OUTPUT_PATH`.
-
-### First-Time Use with `-d` (Loading a Data File)
-
-> **Important:** On the very first run, the subdirectory tree does not exist yet, so `data_input_files/` will not be there before you launch. There are two options:
->
-> **Option A — let the program create it for you:**
-> Run `python main.py` once without `-d` and immediately type `!exit`. The program will create the full directory tree on startup. Then place your CSV in `<TOP_LEVEL_OUTPUT_PATH>/data_input_files/` and run again with `-d my_data.csv`.
->
-> **Option B — run with `-d` anyway:**
-> The directories are created at the very start of execution (before the file is read), so even if the first attempt fails because the file is not yet there, the file system will be fully set up by the time the error occurs. Simply place your CSV in `<TOP_LEVEL_OUTPUT_PATH>/data_input_files/` and re-run.
 
 ### API Keys
 
@@ -191,8 +191,14 @@ python main.py
 # Pre-load a CSV as initial_data_frame in the kernel
 python main.py -d my_data.csv
 
+# Pre-load a CSV from anywhere on the filesystem (copied in automatically)
+python main.py -d /path/to/anywhere/my_data.csv
+
 # Non-interactive: run a markdown prompt file
 python main.py -i prompt.md
+
+# Run a markdown file from anywhere on the filesystem (copied in automatically)
+python main.py -i /path/to/anywhere/my_analysis.md
 
 # Save each intermediate step as a separate CSV/HTML
 python main.py -s
@@ -204,8 +210,17 @@ python main.py -c
 python main.py -l DEBUG
 
 # Combinations
-python main.py -d my_data.csv -i prompt.md -s
+python main.py -d /path/to/my_data.csv -i /path/to/my_analysis.md -s
 ```
+
+### Passing Input Files from Anywhere
+
+Both `-d` (CSV data) and `-i` (markdown instructions) accept either a bare filename or a full filesystem path:
+
+- **Bare filename** (e.g. `-d my_data.csv`) — the file is looked up inside the configured `data_input_files/` or `markdown_files/` directory.
+- **Full path** (e.g. `-d /Users/me/datasets/my_data.csv`) — the file is copied into the appropriate directory automatically before the session starts. The original file is not modified.
+
+This means you never need to manually move files into the project directory tree before running.
 
 ### Interactive Session
 
@@ -215,7 +230,7 @@ Enter in your prompt ending in _END_, or enter in !exit:
 Load the sales data from initial_data_frame, group by region,
 calculate total and average revenue, and sort descending._END_
 
-# → LLM generates code → kernel executes → browser opens with result table
+# → LLM generates code → kernel executes inside Docker → browser opens with result table
 
 Enter in your follow-up question followed by _END_ or to quit enter in !exit:
 
@@ -228,7 +243,7 @@ Now filter to only regions with average revenue above 5000._END_
 
 ### Markdown Prompt Files (`-i`)
 
-Prompts can be written as markdown and stored in `markdown_files/`. This is useful for repeatable or complex multi-step analyses. See `markdown_files/test1.md` and `markdown_files/macd_test.md` for real examples.
+Prompts can be written as markdown and stored in `markdown_files/`. This is useful for repeatable or complex multi-step analyses. The file can be passed as a full path from anywhere — it will be copied into `markdown_files/` automatically.
 
 ```markdown
 ## Step 1
@@ -244,7 +259,7 @@ Export the final smoothed pivot table.
 
 Run with:
 ```bash
-python main.py -d sales.csv -i my_analysis.md -s
+python main.py -d /path/to/sales.csv -i /path/to/my_analysis.md -s
 ```
 
 ---
@@ -267,7 +282,7 @@ This gives the LLM enough continuity to understand what has been done, without i
 LLM returns code block
         │
         ▼
-execute_and_capture() runs code in kernel
+execute_and_capture() runs code in kernel (Docker container)
         │
    ┌────┴────┐
    │  error? │
@@ -284,6 +299,17 @@ execute_and_capture() runs code in kernel
   (up to 10 code-format retries;
    unlimited execution retries)
 ```
+
+---
+
+## Docker Kernel Sandbox
+
+The Jupyter kernel runs inside a Docker container (`jupyter-pandas-kernel:latest`) built from the included `Dockerfile`. This provides isolation between the generated code and the host machine.
+
+- **Volume mount** — `TOP_LEVEL_OUTPUT_PATH` is mounted read-write inside the container at `/sandbox/<top_level_name>/`. All file I/O by generated code goes through this path.
+- **Port binding** — Jupyter kernel ports 5555–5559 are bound to `127.0.0.1` only (not exposed externally).
+- **Timezone** — the host's local timezone is passed into the container via the `TZ` environment variable so timestamps in generated code match the host.
+- **Cleanup** — on exit (normal or via Ctrl-C), `docker stop` is called automatically to remove the container.
 
 ---
 
@@ -316,8 +342,8 @@ On exit (via `!exit` or EOF), the full conversation is saved to `HISTORY_PATH` a
 
 | Package | Purpose |
 |---|---|
-| `jupyter-client` | Manages in-process IPython kernel |
-| `ipykernel` | Python kernel backend |
+| `jupyter-client` | Manages the IPython kernel connection over TCP |
+| `ipykernel` | Python kernel backend (runs inside Docker) |
 | `litellm` | Unified LLM gateway (supports OpenAI, Anthropic, Together, and many others) |
 | `pandas` | DataFrame operations in generated code |
 | `matplotlib` | Available to generated code for plotting |
