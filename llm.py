@@ -37,13 +37,14 @@ class LLM():
             try:
                 return completion(self.endpoint, messages) # Note litellm.completion for together requires endpoint as model name
             except Exception as e:
-                raise RuntimeError(f"LiteLLM completion failed for provider '{self.provider}'. Ensure it is supported by LiteLLM, that the endpoint is correctly specified, and the appropriate API key is set in your environment.\n\nOriginal error: {e}")
+                raise RuntimeError(f"LiteLLM completion failed for provider '{self.provider}' with details {repr(self)}. Ensure it is supported by LiteLLM, that the endpoint is correctly specified, and the appropriate API key is set in your environment.\n\nOriginal error: {e}\n")
 
-        elif self.provider == 'ollama':
-            return completion(model=self.model,
+        else:
+            try:
+                return completion(model=self.model,
                               messages=messages,
                               api_base=self.endpoint)
-        else:
-            raise ValueError(f"Model {self} not recognized in LLM call.")
+            except Exception as e:
+                raise RuntimeError(f"LiteLLM completion failed for local model '{self.provider} with details {repr(self)}. Check LiteLLM documentation for error:\n\n{e}\n")
 
     
