@@ -1,6 +1,6 @@
 # Agentic Pandas
 
-A REPL-style agentic loop that lets an LLM write and execute pandas code in a sandboxed Jupyter kernel running inside a Docker container. You describe data transformations in plain language (or a markdown file), and the agent generates, runs, and iteratively fixes Python/pandas code until the task succeeds — then renders the result as an HTML table in your browser.
+A REPL-style agentic loop using an LLM to write pandas code, executing in a sandboxed Jupyter kernel running inside a Docker container. Describe data transformations in plain language (or a markdown file); the agent generates, runs, and iteratively fixes Python/pandas code until the task succeeds, then saves the output in .csv and .xlsx formats and renders the result as an HTML table in your browser.
 
 ---
 
@@ -13,7 +13,7 @@ A REPL-style agentic loop that lets an LLM write and execute pandas code in a sa
        │
        ▼
   ┌─────────┐   kernel state + history   ┌─────────────────────────────────┐
-  │  Main   │ ─────────────────────────► │  LLM  (via LiteLLM gateway)     │
+  │  Main   │ ─────────────────────────► │  LLM  (via LiteLLM interface)   │
   │  Loop   │ ◄───────────────────────── │  · External API (OpenAI,        │
   └────┬────┘      python code block     │    Anthropic, Together, etc.)   │
        │                                 │  · Local server (e.g. Ollama)   │
@@ -24,11 +24,11 @@ A REPL-style agentic loop that lets an LLM write and execute pandas code in a sa
   └────────┬────────┘            └──────────────────────────────────┘
            │ success
            ▼
-  ┌─────────────────┐
-  │  CSV output(s)  │
-  │  → HTML render  │
-  │  → Browser open │
-  └─────────────────┘
+  ┌────────────────────────┐
+  │  CSV / XLSX output(s)  │
+  │  → HTML render         │
+  │  → Browser open        │
+  └────────────────────────┘
            │
            ▼
    Follow-up? ──yes──► loop back to top
@@ -37,33 +37,14 @@ A REPL-style agentic loop that lets an LLM write and execute pandas code in a sa
    Save conversation history → exit
 ```
 
-### Step-by-Step Walkthrough
-
-1. **Startup** — a Docker container running an IPython kernel is launched and all configured directories are created. The kernel communicates with the host over TCP ports 5555–5559.
-2. **Input** — the user types a prompt terminated with `_END_`, or a markdown file is passed via `-i`. Optionally a CSV is pre-loaded into the kernel as `initial_data_frame` via `-d`. Both `-i` and `-d` accept either a bare filename (resolved relative to the configured directory) or a full path from anywhere on the filesystem — the file is copied into the expected directory automatically.
-3. **State probe** — `STATE_PROBE` (a snippet of introspection code) is executed in the kernel; its JSON output describes every DataFrame, Series, and scalar currently in scope.
-4. **LLM call** — the full conversation history plus the current kernel state are sent to the LLM via [LiteLLM](#litellm-the-llm-gateway), which is instructed to reply with **only** a fenced Python code block.
-5. **Code extraction & execution** — the code block is stripped from the response and executed in the kernel via `execute_and_capture()`. Because the kernel runs inside the container, all file paths in generated code refer to the container's `/sandbox/` mount point.
-6. **Error handling** — if the kernel returns a traceback, it is cleaned of ANSI codes, appended to the conversation as a user message, and the loop retries automatically from step 4.
-7. **Output delivery** — on success the agent reads the CSV(s) the LLM wrote to the output path inside the container (mirrored on the host via the volume mount), renders them as scrollable HTML tables, and opens them in the browser.
-8. **Follow-up** — the user can continue asking questions; the kernel state is re-probed before each new LLM call so the model always sees up-to-date variable state.
-
----
-
-## LiteLLM — The LLM Gateway
-
-**[LiteLLM](https://github.com/BerriAI/litellm)** is the unified LLM API layer used by this project. It provides a single `completion()` interface that works across a wide range of model providers — OpenAI, Anthropic, Together AI, Mistral, Cohere, Groq, and many others — without any provider-specific code. This means you can point the agent at virtually any supported model simply by changing your `.env` configuration.
-
-- For **external API calls** (any cloud-hosted model), LiteLLM handles authentication and routing. Check the [LiteLLM provider docs](https://docs.litellm.ai/docs/providers) to find the correct `model` / endpoint string for your chosen provider and set it as `LLM_ENDPOINT` in `.env`.
-- For **local LLM servers**, only [Ollama](https://ollama.com/) is currently supported as the local provider. Support for other local servers (e.g. LM Studio, llama.cpp) can be added with a small change to `llm.py`.
-
 ---
 
 ## Architecture
 
 ```
-sandboxing/
+core_version/
 ├── main.py          # Entry point & agentic REPL loop
+├── server.py        # MCP server mode (FastMCP — exposes agent as MCP tools)
 ├── config.py        # Pydantic-settings config (LLMConfig, FilePathConfig)
 ├── llm.py           # LiteLLM wrapper (external API or local Ollama)
 ├── logger.py        # Logging setup (stdout/stderr split, configurable level)
@@ -74,12 +55,11 @@ sandboxing/
 └── .env             # Local config (not committed)
 ```
 
-### Module Responsibilities
-
 | Module | Responsibility |
 |---|---|
 | `main.py` | REPL loop, Docker kernel lifecycle, error retry, HTML delivery |
-| `config.py` | Loads all settings from `.env` via pydantic-settings |
+| `server.py` | MCP server — exposes the agent as FastMCP tools (`start_session`, `pandas_query`, `end_session`, `diagnose_environment`, `diagnose_kernel`) |
+| `config.py` | Loads all settings from `.env` via pydantic-settings; auto-injects `LLM_API_KEY` into the provider-specific env var |
 | `llm.py` | `completion_call()` — routes to external API (via LiteLLM) or local Ollama |
 | `logger.py` | Configures the `agentic_pandas` logger; INFO/DEBUG → stdout, WARNING+ → stderr |
 | `message.py` | `Message(role, content)` — typed conversation turn |
@@ -100,7 +80,7 @@ LLM saves one final CSV + XLSX to:           LLM saves each intermediate step to
     final_result_df_<name>_<ts>.csv              STEP_1_<name>_<ts>.csv
     final_result_df_<name>_<ts>.xlsx             STEP_2_<name>_<ts>.csv
                                              Final step also saved as .xlsx
-App reads newest CSV → one HTML tab          App reads all CSVs → one tab per step
+App reads newest CSV → one HTML tab          App reads all CSVs → one HTML tab per step
 ```
 
 After a successful run, `file_results()` archives all CSVs and HTML files into a named sub-folder keyed to the result filename, keeping the output directories clean for the next run.
@@ -115,95 +95,95 @@ Requires Python 3.12+, [`uv`](https://github.com/astral-sh/uv), and [Docker](htt
 git clone <repo>
 cd sandboxing
 
-# Install Python dependencies
 uv sync
 
-# Build the Docker image for the sandboxed kernel (one-time setup)
+# One-time: build the sandboxed kernel image (pandas, numpy, matplotlib, openpyxl)
 docker build -t jupyter-pandas-kernel:latest .
 ```
 
-> **Note:** The Docker image must be built before running the agent. It packages the IPython kernel along with pandas, numpy, matplotlib, and openpyxl inside a sandboxed container. Rebuild the image if you add new packages to the Dockerfile.
+Kernel ports 5555–5559 are bound to `127.0.0.1` only. The container is stopped automatically on exit or Ctrl-C.
 
 ---
 
 ## Configuration
 
-Create a `.env` file in the `sandboxing/` directory:
+Create a `.env` file in the project directory:
 
 ```dotenv
-# LLM provider identifier (e.g. "together", "openai", "anthropic", "ollama")
+# ── External API provider (e.g. Together AI) ───────────────────────────────
 PROVIDER=together
+LLM_NAME=gptoss120b
 
-# Model name — used for local Ollama calls
-LLM_NAME=llama3
+# LiteLLM model string — see https://docs.litellm.ai/docs/providers for format
+LLM_ENDPOINT=together_ai/openai/gpt-oss-120b
 
-# LiteLLM endpoint/model string — used for external API calls
-# Check https://docs.litellm.ai/docs/providers for the correct format
-# for your chosen provider (e.g. "together_ai/mistralai/Mixtral-8x7B-v0.1",
-# "openai/gpt-4o", "anthropic/claude-3-5-sonnet-20241022")
-LLM_ENDPOINT=together_ai/meta-llama/Llama-3-70b-chat-hf
-
-# true = local Ollama, false = external API via LiteLLM
 IS_LOCAL=false
 
-# Root directory — all subdirectories are derived from this automatically
+# Optional: if omitted, LiteLLM reads the standard provider env var instead
+# (e.g. TOGETHER_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY …)
+LLM_API_KEY=your-api-key-here
+
 TOP_LEVEL_OUTPUT_PATH=./my_project
 ```
 
-`TOP_LEVEL_OUTPUT_PATH` is the only path variable required. On startup the program creates the following subdirectory structure under it automatically:
+```dotenv
+# ── Local Ollama provider ───────────────────────────────────────────────────
+PROVIDER=ollama
+LLM_NAME=ollama/gpt-oss-120b
+IS_LOCAL=true
+LLM_ENDPOINT=http://localhost:11434
+
+TOP_LEVEL_OUTPUT_PATH=./my_project
+```
+
+`TOP_LEVEL_OUTPUT_PATH` is the only required path. The following structure is created automatically:
 
 ```
 my_project/
-├── output_files/    # CSVs written by the LLM
-│   └── steps/       # CSVs for steps mode (-s)
-├── html_files/      # Rendered HTML result tables
-│   └── steps/       # HTML for steps mode (-s)
-├── data_input_files/     # Place input CSV files here (used with -d)
-├── markdown_files/  # Markdown prompt files (used with -i)
-└── history/         # Saved conversation histories
+├── output_files/         # CSVs / XLSX written by the LLM
+│   └── steps/            # output for steps mode (-s)
+├── html_files/           # Rendered HTML result tables
+│   └── steps/            # HTML for steps mode (-s)
+├── data_input_files/     # Input CSVs (used with -d)
+├── markdown_files/       # Markdown prompt files (used with -i)
+└── history/              # Saved conversation histories
 ```
 
-The output directory is mounted into the Docker container at `/sandbox/<top_level_name>/`, so all file I/O by generated code goes to paths under that mount point. The host path and the container path stay in sync automatically.
-
-Any individual path can be overridden in `.env` if needed (e.g. `INPUT_PATH=/data/my_csv_files`). Paths not specified are always derived from `TOP_LEVEL_OUTPUT_PATH`.
+The top-level directory is mounted into the container at `/sandbox/<top_level_name>/`; all paths in generated code use that mount point. Individual paths can be overridden in `.env` (e.g. `INPUT_PATH=/data/my_csv_files`).
 
 ### API Keys
 
-LiteLLM automatically discovers API keys from your **environment variables** — you do not need to put them in `.env`. Simply export the standard key variable for your provider before running (e.g. `export OPENAI_API_KEY=...`, `export ANTHROPIC_API_KEY=...`). If you prefer to keep everything in `.env`, you can add the key there and it will be picked up as an environment variable when the settings are loaded.
+Two options — both result in LiteLLM finding the key as a standard provider env var:
+
+1. **Export before running** — `export OPENAI_API_KEY=...` etc. LiteLLM discovers these automatically.
+2. **`LLM_API_KEY` in `.env`** — `config.py` injects it into the correct env var on startup based on `PROVIDER`. Mapping: `together`/`together_ai` → `TOGETHER_API_KEY`, `openai` → `OPENAI_API_KEY`, `anthropic` → `ANTHROPIC_API_KEY`, `groq` → `GROQ_API_KEY`, `mistral` → `MISTRAL_API_KEY`, `cohere` → `COHERE_API_KEY`, `huggingface` → `HUGGINGFACE_API_KEY`, `replicate` → `REPLICATE_API_KEY`, `google_gemini` → `GEMINI_API_KEY`.
 
 ### LLM Provider Setup
 
 | Mode | `IS_LOCAL` | How it works |
 |---|---|---|
-| External API (any LiteLLM-supported provider) | `false` | `LLM_ENDPOINT` is passed directly to `litellm.completion()`. See the [LiteLLM provider docs](https://docs.litellm.ai/docs/providers) for the exact string format required per provider. |
-| Local server | `true` | Currently routes to Ollama using `LLM_NAME` and `LLM_ENDPOINT` as the `api_base`. Other local servers can be added in `llm.py`. |
-
-> **Note:** When `IS_LOCAL=false`, the value of `LLM_ENDPOINT` must be a valid LiteLLM model identifier for your provider. If it is wrong, LiteLLM will raise an error with a message pointing you to check the endpoint and ensure the correct API key environment variable is set.
+| External API (any LiteLLM-supported provider) | `false` | `LLM_ENDPOINT` is passed directly to `litellm.completion()`. See the [LiteLLM provider docs](https://docs.litellm.ai/docs/providers) for the exact string format per provider. |
+| Local server | `true` | Routes to Ollama using `LLM_NAME` and `LLM_ENDPOINT` as `api_base`. Other local servers can be added in `llm.py`. |
 
 ---
 
 ## Usage
 
 ```bash
-# Interactive mode — type prompts, end each with _END_
+# Interactive — type a prompt, terminate with _END_, follow up or !exit to quit
 python main.py
 
-# Pre-load a CSV as initial_data_frame in the kernel
+# Pre-load a CSV as initial_data_frame (bare filename or full path — copied in automatically)
 python main.py -d my_data.csv
-
-# Pre-load a CSV from anywhere on the filesystem (copied in automatically)
 python main.py -d /path/to/anywhere/my_data.csv
 
-# Non-interactive: run a markdown prompt file
+# Non-interactive: run a markdown prompt file (bare filename or full path)
 python main.py -i prompt.md
-
-# Run a markdown file from anywhere on the filesystem (copied in automatically)
-python main.py -i /path/to/anywhere/my_analysis.md
 
 # Save each intermediate step as a separate CSV/HTML
 python main.py -s
 
-# Compact conversation history to save tokens
+# Compact conversation history after each iteration to reduce token usage
 python main.py -c
 
 # Set logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL — default: WARNING)
@@ -213,70 +193,11 @@ python main.py -l DEBUG
 python main.py -d /path/to/my_data.csv -i /path/to/my_analysis.md -s
 ```
 
-### Passing Input Files from Anywhere
-
-Both `-d` (CSV data) and `-i` (markdown instructions) accept either a bare filename or a full filesystem path:
-
-- **Bare filename** (e.g. `-d my_data.csv`) — the file is looked up inside the configured `data_input_files/` or `markdown_files/` directory.
-- **Full path** (e.g. `-d /Users/me/datasets/my_data.csv`) — the file is copied into the appropriate directory automatically before the session starts. The original file is not modified.
-
-This means you never need to manually move files into the project directory tree before running.
-
-### Interactive Session
-
-```
-Enter in your prompt ending in _END_, or enter in !exit:
-
-Load the sales data from initial_data_frame, group by region,
-calculate total and average revenue, and sort descending._END_
-
-# → LLM generates code → kernel executes inside Docker → browser opens with result table
-
-Enter in your follow-up question followed by _END_ or to quit enter in !exit:
-
-Now filter to only regions with average revenue above 5000._END_
-
-# → kernel state re-probed → LLM sees current DataFrames → iterates
-
-!exit   # saves conversation history and exits
-```
-
-### Markdown Prompt Files (`-i`)
-
-Prompts can be written as markdown and stored in `markdown_files/`. This is useful for repeatable or complex multi-step analyses. The file can be passed as a full path from anywhere — it will be copied into `markdown_files/` automatically.
-
-```markdown
-## Step 1
-Load initial_data_frame. Pivot by date (index) and category (columns),
-values are sales. Fill nulls with 0.
-
-## Step 2
-Calculate a 7-day rolling mean for each category column.
-
-## Step 3
-Export the final smoothed pivot table.
-```
-
-Run with:
-```bash
-python main.py -d /path/to/sales.csv -i /path/to/my_analysis.md -s
-```
+On `!exit`, the full conversation is saved as a timestamped `.txt` file in `history/`.
 
 ---
 
-## Context Window Management
-
-Each LLM call includes the full conversation history (system prompt + all prior user/assistant turns). As a session grows, this consumes more tokens.
-
-**`-c` / `--compact` flag** — after each successful iteration, `reset_reload_context_compact_history()` replaces the accumulated history with:
-- The current kernel state (live DataFrame snapshots)
-- A concatenation of all prior user queries (not code or tracebacks)
-
-This gives the LLM enough continuity to understand what has been done, without including every generated code block and error trace.
-
----
-
-## Error Handling Flow
+## Error Handling
 
 ```
 LLM returns code block
@@ -289,52 +210,39 @@ execute_and_capture() runs code in kernel (Docker container)
    └────┬────┘
    yes  │                              no
         ▼                               ▼
-  strip ANSI from traceback      read CSV output(s)
+  strip ANSI from traceback      read CSV / XLSX output(s)
   re-probe kernel state          render HTML table(s)
   append error as user msg       open in browser
-  archive partial output files   re-probe kernel state
-        │                        await follow-up input
-        ▼
-  retry LLM call
-  (up to 10 code-format retries;
-   unlimited execution retries)
+  move partial output files      re-probe kernel state
+  → error_<timestamp>/ subdir    await follow-up input
+        │                               │
+        ▼                        user types !exit?
+  retry LLM call                        │ yes
+  (up to 10 code-format retries;        ▼
+   unlimited execution retries)  save history → exit
 ```
 
----
-
-## Docker Kernel Sandbox
-
-The Jupyter kernel runs inside a Docker container (`jupyter-pandas-kernel:latest`) built from the included `Dockerfile`. This provides isolation between the generated code and the host machine.
-
-- **Volume mount** — `TOP_LEVEL_OUTPUT_PATH` is mounted read-write inside the container at `/sandbox/<top_level_name>/`. All file I/O by generated code goes through this path.
-- **Port binding** — Jupyter kernel ports 5555–5559 are bound to `127.0.0.1` only (not exposed externally).
-- **Timezone** — the host's local timezone is passed into the container via the `TZ` environment variable so timestamps in generated code match the host.
-- **Cleanup** — on exit (normal or via Ctrl-C), `docker stop` is called automatically to remove the container.
+On error, any files already written to the output directory are moved into an `error_<YYYY-MM-DD_HH-MM-SS>/` subdirectory for inspection. In steps mode these appear under `output_files/steps/` and `html_files/steps/`.
 
 ---
 
-## Kernel State Snapshot
+## MCP Server Mode
 
-Before every LLM call the `STATE_PROBE` snippet runs inside the kernel and emits a JSON summary of all live variables. The LLM receives this to understand what data it already has access to. Example output:
+`server.py` exposes the agent as [Model Context Protocol](https://modelcontextprotocol.io/) tools via [FastMCP](https://github.com/jlowin/fastmcp), driveable by any MCP-compatible client (e.g. Claude Desktop).
 
-```json
-{
-  "initial_data_frame": {
-    "type": "DataFrame",
-    "shape": [300, 7],
-    "columns": ["order_id", "customer_id", "order_date", "region", "product_id", "qty", "unit_price"],
-    "dtypes": {"order_id": "int64", "order_date": "datetime64[ns]"},
-    "head": [{"order_id": 1, "customer_id": 42}],
-    "nulls": {"order_id": 0, "order_date": 0}
-  }
-}
+```bash
+python server.py
 ```
 
----
+| Tool | Description |
+|---|---|
+| `start_session` | Starts the Docker kernel. Optionally pre-loads a CSV (`datafile` argument). |
+| `pandas_query` | Runs a natural-language data analysis query against the active kernel. |
+| `end_session` | Stops the kernel and saves conversation history. |
+| `diagnose_environment` | Reports which API keys and config values are visible to the server process. |
+| `diagnose_kernel` | Runs the Docker container briefly with captured output to debug startup failures. |
 
-## Conversation History
-
-On exit (via `!exit` or EOF), the full conversation is saved to `HISTORY_PATH` as a timestamped `.txt` file containing all message contents. This is useful for auditing exactly what the agent did across a session.
+Uses the same `.env` configuration as the CLI. Call `start_session` first, then `pandas_query`, then `end_session`.
 
 ---
 
@@ -344,7 +252,9 @@ On exit (via `!exit` or EOF), the full conversation is saved to `HISTORY_PATH` a
 |---|---|
 | `jupyter-client` | Manages the IPython kernel connection over TCP |
 | `ipykernel` | Python kernel backend (runs inside Docker) |
-| `litellm` | Unified LLM gateway (supports OpenAI, Anthropic, Together, and many others) |
+| `litellm` | Unified LLM interface (supports OpenAI, Anthropic, Together, and many others) |
 | `pandas` | DataFrame operations in generated code |
 | `matplotlib` | Available to generated code for plotting |
 | `pydantic` / `pydantic-settings` | Config models and `.env` loading |
+| `mcp` / `fastmcp` | MCP server framework (`server.py` mode) |
+| `python-dotenv` | `.env` loading for the MCP server process |

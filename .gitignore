@@ -218,7 +218,8 @@ __marimo__/
 # Folders added
 tmp/
 input_output_stuff/
-
+tests/
+input_files/
 #stuff
 **.csv
 *.ipynb
