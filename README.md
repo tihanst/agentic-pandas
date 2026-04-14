@@ -96,19 +96,32 @@ After a successful run, `file_results()` archives all CSVs and HTML files into a
 
 ---
 
+## Quickstart
+
+1. **Clone and install**
+   ```bash
+   git clone https://github.com/tihanst/agentic-pandas
+   cd agentic-pandas
+   uv sync
+   ```
+
+2. **Build the sandboxed kernel image** (one-time)
+   ```bash
+   docker build -t jupyter-pandas-kernel:latest docker/
+   ```
+
+3. **Create a `.env` file** in the project directory — see [Configuration](#configuration) below.
+
+4. **Run**
+   ```bash
+   uv run agentic-pandas
+   ```
+
+---
+
 ## Installation
 
 Requires Python 3.12+, [`uv`](https://github.com/astral-sh/uv), and [Docker](https://docs.docker.com/get-docker/).
-
-```bash
-git clone https://github.com/tihanst/agentic-pandas
-cd agentic-pandas
-
-uv sync
-
-# One-time: build the sandboxed kernel image (pandas, numpy, matplotlib, openpyxl)
-docker build -t jupyter-pandas-kernel:latest docker/
-```
 
 Kernel ports 5555–5559 are bound to `127.0.0.1` only. The container is stopped automatically on exit or Ctrl-C.
 
@@ -177,6 +190,8 @@ Two options — both result in LiteLLM finding the key as a standard provider en
 ---
 
 ## Usage
+
+Prompts are terminated by `_END_`, which can be appended directly to your text, added after any amount of whitespace, or typed on its own line when you are done. After each successful run you can enter a follow-up prompt or type `!exit` to save history and quit.
 
 ```bash
 # Interactive — type a prompt, terminate with _END_, follow up or !exit to quit
