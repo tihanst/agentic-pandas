@@ -101,7 +101,7 @@ After a successful run, `file_results()` archives all CSVs and HTML files into a
 Requires Python 3.12+, [`uv`](https://github.com/astral-sh/uv), and [Docker](https://docs.docker.com/get-docker/).
 
 ```bash
-git clone <repo>
+git clone https://github.com/tihanst/agentic-pandas
 cd agentic-pandas
 
 uv sync

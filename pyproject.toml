@@ -8,9 +8,12 @@ packages = ["src/agentic_pandas"]
 [project]
 name = "agentic-pandas"
 version = "0.1.0"
-description = "A pandas agent."
+description = "LLM-driven pandas agent for data manipulation and transformation, executed in a sandboxed Docker kernel."
 readme = "README.md"
 requires-python = ">=3.12"
+license = { file = "LICENSE" }
+authors = [{ name = "tihanst" }]
+keywords = ["pandas", "llm", "agent", "mcp", "jupyter", "docker"]
 dependencies = [
     "ipykernel>=7.2.0",
     "jupyter-client>=8.8.0",
