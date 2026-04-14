@@ -171,26 +171,26 @@ Two options — both result in LiteLLM finding the key as a standard provider en
 
 ```bash
 # Interactive — type a prompt, terminate with _END_, follow up or !exit to quit
-python main.py
+uv run main.py
 
 # Pre-load a CSV as initial_data_frame (bare filename or full path — copied in automatically)
-python main.py -d my_data.csv
-python main.py -d /path/to/anywhere/my_data.csv
+uv run main.py -d my_data.csv
+uv run main.py -d /path/to/anywhere/my_data.csv
 
 # Non-interactive: run a markdown prompt file (bare filename or full path)
-python main.py -i prompt.md
+uv run main.py -i prompt.md
 
 # Save each intermediate step as a separate CSV/HTML
-python main.py -s
+uv run main.py -s
 
 # Compact conversation history after each iteration to reduce token usage
-python main.py -c
+uv run main.py -c
 
 # Set logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL — default: WARNING)
-python main.py -l DEBUG
+uv run main.py -l DEBUG
 
 # Combinations
-python main.py -d /path/to/my_data.csv -i /path/to/my_analysis.md -s
+uv run main.py -d /path/to/my_data.csv -i /path/to/my_analysis.md -s
 ```
 
 On `!exit`, the full conversation is saved as a timestamped `.txt` file in `history/`.
@@ -231,7 +231,7 @@ On error, any files already written to the output directory are moved into an `e
 `server.py` exposes the agent as [Model Context Protocol](https://modelcontextprotocol.io/) tools via [FastMCP](https://github.com/jlowin/fastmcp), driveable by any MCP-compatible client (e.g. Claude Desktop).
 
 ```bash
-python server.py
+uv run server.py
 ```
 
 | Tool | Description |
