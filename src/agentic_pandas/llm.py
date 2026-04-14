@@ -6,7 +6,7 @@ from typing import List, Dict, Union
 
 from litellm import completion
 
-from message import Message
+from .message import Message
 
 class LLM():
     

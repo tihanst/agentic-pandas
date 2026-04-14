@@ -16,7 +16,7 @@ exclude-newer = "2026-04-02T00:00:00Z"
 [[package]]
 name = "agentic-pandas"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
     { name = "ipykernel" },

@@ -30,11 +30,11 @@ from jupyter_client.manager import KernelManager
 from jupyter_client.blocking.client import BlockingKernelClient
 from jupyter_client.asynchronous.client import AsyncKernelClient
 
-from logger import get_logger, set_logger
-from config import LLMConfig, FilePathConfig
-from llm import LLM
-from message import Message
-from prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_WITH_STEPS, STATE_PROBE, LOAD_STATE
+from .logger import get_logger, set_logger
+from .config import LLMConfig, FilePathConfig
+from .llm import LLM
+from .message import Message
+from .prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_WITH_STEPS, STATE_PROBE, LOAD_STATE
 
 
 class CSVLoadError(Exception):

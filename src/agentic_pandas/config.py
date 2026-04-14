@@ -3,7 +3,7 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, model_validator
 
-_ENV_FILE = Path(__file__).parent / ".env"
+_ENV_FILE = Path(__file__).parents[2] / ".env"
 
 # Maps the PROVIDER value in .env to the env var name LiteLLM expects
 _PROVIDER_KEY_ENV_VARS: dict[str, str] = {
@@ -48,7 +48,7 @@ class FilePathConfig(BaseSettings):
     @model_validator(mode='after')
     def set_derived_paths(self) -> 'FilePathConfig':
         if not self.top_level_output_path.is_absolute():
-            self.top_level_output_path = (Path(__file__).parent / self.top_level_output_path).resolve()
+            self.top_level_output_path = (Path(__file__).parents[2] / self.top_level_output_path).resolve()
         if not self.output_path:
             self.output_path = self.top_level_output_path / "output_files"
         if not self.html_path:

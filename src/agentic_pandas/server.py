@@ -4,7 +4,7 @@ warnings.filterwarnings("ignore")
 import subprocess
 from pathlib import Path
 from dotenv import load_dotenv
-load_dotenv(Path(__file__).parent / ".env")
+load_dotenv(Path(__file__).parents[2] / ".env")
 import time
 import datetime
 import asyncio
@@ -13,7 +13,7 @@ from typing import Dict, Any
 from mcp.server.fastmcp import FastMCP
 from jupyter_client.blocking.client import BlockingKernelClient
 
-from main import (
+from .main import (
     execute_and_capture,
     execute_csv_load,
     get_kernel_state,
@@ -30,11 +30,11 @@ from main import (
     CONTAINER_NAME,
     CONNECTION,
 )
-from config import LLMConfig, FilePathConfig
-from llm import LLM
-from message import Message
-from prompts import SYSTEM_PROMPT
-from logger import get_logger
+from .config import LLMConfig, FilePathConfig
+from .llm import LLM
+from .message import Message
+from .prompts import SYSTEM_PROMPT
+from .logger import get_logger
 
 logger = get_logger("agentic_pandas.server")
 
@@ -82,7 +82,7 @@ async def diagnose_environment() -> str:
     import os
     from pathlib import Path
 
-    env_file = Path(__file__).parent / ".env"
+    env_file = Path(__file__).parents[2] / ".env"
     results = [f".env exists: {env_file.exists()}"]
 
     # Check for known API key env vars without revealing the values
