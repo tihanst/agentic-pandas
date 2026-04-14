@@ -28,6 +28,9 @@ dependencies = [
     "fastmcp>=3.2.0",
 ]
 
+[tool.uv]
+exclude-newer = "2026-04-02T00:00:00Z"
+
 [project.scripts]
 agentic-pandas = "agentic_pandas.main:run"
 agentic-pandas-server = "agentic_pandas.server:main"
