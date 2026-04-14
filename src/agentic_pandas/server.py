@@ -320,5 +320,8 @@ async def end_session() -> str:
     return f"Session ended. Data saved to {output_path}."
 
 
-if __name__ == "__main__":
+def main():
     mcp.run()
+
+if __name__ == "__main__":
+    main()

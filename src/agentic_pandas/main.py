@@ -603,5 +603,8 @@ async def main():
             conversation_history.append(Message(role='user', content=query))
 
 
-if __name__ == "__main__":
+def run():
     asyncio.run(main())
+
+if __name__ == "__main__":
+    run()

@@ -42,17 +42,20 @@ A REPL-style agentic loop using an LLM to write pandas code, executing in a sand
 ## Architecture
 
 ```
-core_version/
-├── main.py          # Entry point & agentic REPL loop
-├── server.py        # MCP server mode (FastMCP — exposes agent as MCP tools)
-├── config.py        # Pydantic-settings config (LLMConfig, FilePathConfig)
-├── llm.py           # LiteLLM wrapper (external API or local Ollama)
-├── logger.py        # Logging setup (stdout/stderr split, configurable level)
-├── message.py       # Message pydantic model (role / content)
-├── prompts.py       # System prompts + STATE_PROBE + LOAD_STATE snippets
-├── Dockerfile       # Builds the sandboxed Jupyter kernel image
+agentic-pandas/
+├── src/
+│   └── agentic_pandas/
+│       ├── main.py      # Entry point & agentic REPL loop
+│       ├── server.py    # MCP server mode (FastMCP — exposes agent as MCP tools)
+│       ├── config.py    # Pydantic-settings config (LLMConfig, FilePathConfig)
+│       ├── llm.py       # LiteLLM wrapper (external API or local Ollama)
+│       ├── logger.py    # Logging setup (stdout/stderr split, configurable level)
+│       ├── message.py   # Message pydantic model (role / content)
+│       └── prompts.py   # System prompts + STATE_PROBE + LOAD_STATE snippets
+├── docker/
+│   └── Dockerfile       # Builds the sandboxed Jupyter kernel image
 ├── pyproject.toml
-└── .env             # Local config (not committed)
+└── .env                 # Local config (not committed)
 ```
 
 | Module | Responsibility |
@@ -64,7 +67,13 @@ core_version/
 | `logger.py` | Configures the `agentic_pandas` logger; INFO/DEBUG → stdout, WARNING+ → stderr |
 | `message.py` | `Message(role, content)` — typed conversation turn |
 | `prompts.py` | System prompts defining LLM behaviour; `STATE_PROBE` (kernel introspection); `LOAD_STATE` (CSV loader) |
-| `Dockerfile` | Defines the sandboxed Python/pandas kernel image (`jupyter-pandas-kernel:latest`) |
+| `docker/Dockerfile` | Defines the sandboxed Python/pandas kernel image (`jupyter-pandas-kernel:latest`) |
+
+### Async design
+
+The entire agentic loop is `async`. The key architectural decision is in `execute_and_capture()`, which offloads the blocking `jupyter_client` kernel call to a thread pool via `asyncio.run_in_executor()`. This means the event loop is never blocked while waiting for the kernel to finish executing code — a kernel execution that takes several seconds does not freeze the process.
+
+In MCP server mode (`server.py`) all tool handlers are `async def`, so FastMCP can interleave requests: a slow `pandas_query` kernel execution does not block `diagnose_environment` or other concurrent tool calls.
 
 ---
 
@@ -93,12 +102,12 @@ Requires Python 3.12+, [`uv`](https://github.com/astral-sh/uv), and [Docker](htt
 
 ```bash
 git clone <repo>
-cd sandboxing
+cd agentic-pandas
 
 uv sync
 
 # One-time: build the sandboxed kernel image (pandas, numpy, matplotlib, openpyxl)
-docker build -t jupyter-pandas-kernel:latest .
+docker build -t jupyter-pandas-kernel:latest docker/
 ```
 
 Kernel ports 5555–5559 are bound to `127.0.0.1` only. The container is stopped automatically on exit or Ctrl-C.
@@ -171,26 +180,26 @@ Two options — both result in LiteLLM finding the key as a standard provider en
 
 ```bash
 # Interactive — type a prompt, terminate with _END_, follow up or !exit to quit
-uv run main.py
+uv run agentic-pandas
 
 # Pre-load a CSV as initial_data_frame (bare filename or full path — copied in automatically)
-uv run main.py -d my_data.csv
-uv run main.py -d /path/to/anywhere/my_data.csv
+uv run agentic-pandas -d my_data.csv
+uv run agentic-pandas -d /path/to/anywhere/my_data.csv
 
 # Non-interactive: run a markdown prompt file (bare filename or full path)
-uv run main.py -i prompt.md
+uv run agentic-pandas -i prompt.md
 
 # Save each intermediate step as a separate CSV/HTML
-uv run main.py -s
+uv run agentic-pandas -s
 
 # Compact conversation history after each iteration to reduce token usage
-uv run main.py -c
+uv run agentic-pandas -c
 
 # Set logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL — default: WARNING)
-uv run main.py -l DEBUG
+uv run agentic-pandas -l DEBUG
 
 # Combinations
-uv run main.py -d /path/to/my_data.csv -i /path/to/my_analysis.md -s
+uv run agentic-pandas -d /path/to/my_data.csv -i /path/to/my_analysis.md -s
 ```
 
 On `!exit`, the full conversation is saved as a timestamped `.txt` file in `history/`.
@@ -231,7 +240,7 @@ On error, any files already written to the output directory are moved into an `e
 `server.py` exposes the agent as [Model Context Protocol](https://modelcontextprotocol.io/) tools via [FastMCP](https://github.com/jlowin/fastmcp), driveable by any MCP-compatible client (e.g. Claude Desktop).
 
 ```bash
-uv run server.py
+uv run agentic-pandas-server
 ```
 
 | Tool | Description |

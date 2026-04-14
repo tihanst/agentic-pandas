@@ -24,3 +24,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "fastmcp>=3.2.0",
 ]
+
+[project.scripts]
+agentic-pandas = "agentic_pandas.main:run"
+agentic-pandas-server = "agentic_pandas.server:main"
