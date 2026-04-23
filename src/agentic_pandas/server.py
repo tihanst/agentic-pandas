@@ -296,7 +296,8 @@ async def pandas_query(prompt: str) -> str:
         except TimeoutError as e:
             return f"Execution succeeded but timed out getting updated kernel state: {e}"
 
-        return f"Done. Results opened in browser. HTML saved to: {html_path}"
+        #return f"Done. Results opened in browser. HTML saved to: {html_path}"
+        return f"Done. Results are\n\n: {df.to_string()}"
 
 
 @mcp.tool()
