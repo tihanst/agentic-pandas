@@ -52,6 +52,9 @@ agentic-pandas/
 │       ├── logger.py    # Logging setup (stdout/stderr split, configurable level)
 │       ├── message.py   # Message pydantic model (role / content)
 │       └── prompts.py   # System prompts + STATE_PROBE + LOAD_STATE snippets
+├── skills/
+│   └── agentic-pandas/
+│       └── SKILL.md     # MCP client skill — instructs the calling model on session lifecycle and tool usage
 ├── docker/
 │   └── Dockerfile       # Builds the sandboxed Jupyter kernel image
 ├── pyproject.toml
@@ -61,7 +64,7 @@ agentic-pandas/
 | Module | Responsibility |
 |---|---|
 | `main.py` | REPL loop, Docker kernel lifecycle, error retry, HTML delivery |
-| `server.py` | MCP server — exposes the agent as FastMCP tools (`start_session`, `pandas_query`, `end_session`, `diagnose_environment`, `diagnose_kernel`) |
+| `server.py` | MCP server — exposes the agent as FastMCP tools (`start_session`, `pandas_query`, `end_session`, `diagnose_environment`, `diagnose_kernel`); registers `atexit` and `SIGTERM` handlers to stop the Docker container on process exit |
 | `config.py` | Loads all settings from `.env` via pydantic-settings; auto-injects `LLM_API_KEY` into the provider-specific env var |
 | `llm.py` | `completion_call()` — routes to external API (via LiteLLM) or local Ollama |
 | `logger.py` | Configures the `agentic_pandas` logger; INFO/DEBUG → stdout, WARNING+ → stderr |
@@ -261,12 +264,12 @@ uv run agentic-pandas-server
 | Tool | Description |
 |---|---|
 | `start_session` | Starts the Docker kernel. Optionally pre-loads a CSV (`datafile` argument). |
-| `pandas_query` | Runs a natural-language data analysis query against the active kernel. |
-| `end_session` | Stops the kernel and saves conversation history. |
+| `pandas_query` | Runs a natural-language data analysis query against the active kernel. Returns the first 5 rows of the result as a markdown table; the full output is also saved to file and opened in the browser. |
+| `end_session` | Stops the kernel and saves conversation history. Returns the path to the saved output file. |
 | `diagnose_environment` | Reports which API keys and config values are visible to the server process. |
 | `diagnose_kernel` | Runs the Docker container briefly with captured output to debug startup failures. |
 
-Uses the same `.env` configuration as the CLI. Call `start_session` first, then `pandas_query`, then `end_session`.
+Uses the same `.env` configuration as the CLI. Call `start_session` first, then `pandas_query`, then `end_session`. The Docker container is also stopped automatically if the server process exits (e.g. Claude Desktop or some other host kills it), so containers are not left running orphaned.
 
 ---
 
