@@ -1,7 +1,10 @@
 import warnings
 warnings.filterwarnings("ignore")
 
+import atexit
+import signal
 import subprocess
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parents[2] / ".env")
@@ -58,7 +61,9 @@ def _cleanup() -> None:
     proc = _state["proc"]
     if kc:
         kc.stop_channels()
-    subprocess.run(["docker", "stop", CONTAINER_NAME], capture_output=True)
+    result = subprocess.run(["docker", "stop", CONTAINER_NAME], capture_output=True, text=True)
+    if result.returncode != 0:
+        logger.warning("docker stop failed (rc=%d): %s", result.returncode, result.stderr.strip())
     if proc and proc.poll() is None:
         proc.terminate()
         try:
@@ -74,6 +79,10 @@ def _cleanup() -> None:
     _state["kernel_state"] = {}
     _state["conversation_history"].clear()
     _state["accumulated_queries"].clear()
+
+
+atexit.register(_cleanup)
+signal.signal(signal.SIGTERM, lambda s, f: sys.exit(0))
 
 
 @mcp.tool()
@@ -297,7 +306,7 @@ async def pandas_query(prompt: str) -> str:
             return f"Execution succeeded but timed out getting updated kernel state: {e}"
 
         #return f"Done. Results opened in browser. HTML saved to: {html_path}"
-        return f"Done. Results are\n\n: {df.to_string()}"
+        return f"Done. The head of the results are\n\n: {df.head().to_markdown()}"
 
 
 @mcp.tool()
