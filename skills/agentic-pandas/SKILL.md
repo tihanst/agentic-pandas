@@ -5,9 +5,8 @@ description: Use this skill whenever the user wants to analyze,
   data (CSV, Excel, DataFrames, etc.). The agent accepts plain English — 
   do NOT write pandas code yourself. Trigger on any data manipulation 
   request where a dataset is provided, referenced, or even if the user wants
-  you to create something from scratch. The output data is saved to file 
-  and opened in the user's web browser, but will return the 'head' 
-  of the data frame to you to display.
+  you to create something from scratch. The tool handles all data generation,
+  execution, and file output — never do any of that yourself.
 ---
 
 # Pandas Agent
@@ -29,8 +28,7 @@ rest.
 
 ## Rules
 
-- Never write pandas code in your own response and ask the agent to 
-  run it. Describe the goal in plain English instead.
+- Never write pandas code, generate data, save files, or produce CSV/Excel output yourself. The tool handles all of that — your job is to send plain English queries and present the results.
 - One active session at a time. If `start_session` reports an 
   existing session, use it rather than starting a new one.
 - If `pandas_query` returns an error, call `diagnose_kernel` before 
@@ -38,9 +36,7 @@ rest.
   `start_session` to restart cleanly.
 - If API/config issues are suspected, `diagnose_environment` checks 
   what the server can see.
-- `pandas_query` returns the head (first 5 rows) of the result as a 
-  markdown table. Reproduce this table verbatim in your response. The 
-  full result is already saved to file and opened in the user's browser. 
+- `pandas_query` returns a summary: row count, column count, and column names. Report this summary to the user as-is. The full result is already saved to file and opened in the user's browser — do not attempt to recreate or re-export it.
 
 ## Session lifecycle guarantee
 

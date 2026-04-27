@@ -64,6 +64,7 @@ def _cleanup() -> None:
     result = subprocess.run(["docker", "stop", CONTAINER_NAME], capture_output=True, text=True)
     if result.returncode != 0:
         logger.warning("docker stop failed (rc=%d): %s", result.returncode, result.stderr.strip())
+    subprocess.run(["docker", "rm", "-f", CONTAINER_NAME], capture_output=True)
     if proc and proc.poll() is None:
         proc.terminate()
         try:
@@ -305,8 +306,17 @@ async def pandas_query(prompt: str) -> str:
         except TimeoutError as e:
             return f"Execution succeeded but timed out getting updated kernel state: {e}"
 
-        #return f"Done. Results opened in browser. HTML saved to: {html_path}"
-        return f"Done. The head of the results are\n\n: {df.head().to_markdown()}"
+        all_cols = list(df.columns)
+        shown, budget = [], 0
+        for col in all_cols:
+            if budget + len(col) > 300:
+                break
+            shown.append(col)
+            budget += len(col) + 2
+        col_str = ", ".join(shown)
+        if len(shown) < len(all_cols):
+            col_str += f" ... ({len(shown)} of {len(all_cols)} shown)"
+        return f"Done. {len(df)} rows × {len(all_cols)} columns. Columns: {col_str}"
 
 
 @mcp.tool()
