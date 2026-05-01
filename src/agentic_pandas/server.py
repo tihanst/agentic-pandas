@@ -39,6 +39,14 @@ from .message import Message
 from .prompts import SYSTEM_PROMPT
 from .logger import get_logger
 
+START_SESSION_RETURN = """
+- Never write pandas code, generate data, save files, or produce CSV/Excel output yourself. The tool handles all of that — your job is to send plain English queries and present the results.
+- One active session at a time. If `start_session` reports an existing session, use it rather than starting a new one.
+- If `pandas_query` returns an error, call `diagnose_kernel` before retrying. If the kernel is unhealthy, `end_session` then `start_session` to restart cleanly.
+- `pandas_query` returns a summary: row count, column count, and column names. Report this summary to the user as-is. The full result is already saved to file and opened in the user's browser — do not attempt to recreate or re-export it.
+- Always end sessions when the user indicates that they are done, and not before. If the conversation wraps up with an active session, call `end_session` as part of your final response. Leaving containers running wastes resources. Always tell the user the file path that the results were saved to, which should be given to you by `end_session`.
+"""
+
 logger = get_logger("agentic_pandas.server")
 
 mcp = FastMCP("pandas-agent")
@@ -224,7 +232,7 @@ async def start_session(datafile: str = "") -> str:
         return f"Kernel started but timed out getting initial state: {e}"
 
     loaded = f" Loaded '{datafile}'." if datafile else ""
-    return f"Session started.{loaded} Ready for queries."
+    return f"Session started.{loaded} Ready for queries.\n{START_SESSION_RETURN}"
 
 
 @mcp.tool()
