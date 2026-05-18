@@ -22,7 +22,6 @@ import queue
 from typing import List, Dict, Any, NoReturn
 from pathlib import Path
 import pprint
-import time
 import asyncio
 
 import pandas as pd
@@ -429,7 +428,7 @@ async def main():
 
     proc = start_kernel_container(path_settings)
     try:
-        time.sleep(1)
+        await asyncio.sleep(1)
         kc = BlockingKernelClient()
         logger.info(f"\nConnection:\n{CONNECTION}")
         kc.load_connection_info(CONNECTION)

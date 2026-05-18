@@ -74,9 +74,11 @@ agentic-pandas/
 
 ### Async design
 
-The entire agentic loop is `async`. The key architectural decision is in `execute_and_capture()`, which offloads the blocking `jupyter_client` kernel call to a thread pool via `asyncio.run_in_executor()`. This means the event loop is never blocked while waiting for the kernel to finish executing code — a kernel execution that takes several seconds does not freeze the process.
+The entire agentic loop is `async`. The key architectural decision is in `execute_and_capture()`, which offloads the blocking `jupyter_client` kernel call to a thread pool via `asyncio.run_in_executor()`. This means the event loop is never blocked during kernel execution — a kernel execution that takes several seconds does not freeze the process.
 
-In MCP server mode (`server.py`) all tool handlers are `async def`, so FastMCP can interleave requests: a slow `pandas_query` kernel execution does not block `diagnose_environment` or other concurrent tool calls.
+The LLM call (`llm.completion_call`) is currently synchronous, so the event loop is blocked for the duration of each LLM round-trip. Making it async would allow full interleaving of concurrent tool calls across both the LLM and kernel phases.
+
+In MCP server mode (`server.py`) all tool handlers are `async def`. Concurrent tool calls are interleaved during kernel execution phases, but will block on each other during LLM calls.
 
 ---
 
