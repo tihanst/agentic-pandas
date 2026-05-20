@@ -258,7 +258,7 @@ async def pandas_query(prompt: str) -> str:
         # Retry until LLM returns a well-formed code block
         code_block = None
         for attempt in range(10):
-            result = llm.completion_call(payload)
+            result = await llm.acompletion_call(payload)
             clean_result = strip_ansi(result["choices"][0]["message"]["content"])
             try:
                 code_block = extract_code(clean_result)

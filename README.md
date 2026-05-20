@@ -66,7 +66,7 @@ agentic-pandas/
 | `main.py` | REPL loop, Docker kernel lifecycle, error retry, HTML delivery |
 | `server.py` | MCP server — exposes the agent as FastMCP tools (`start_session`, `pandas_query`, `end_session`, `diagnose_environment`, `diagnose_kernel`); registers `atexit` and `SIGTERM` handlers to stop the Docker container on process exit |
 | `config.py` | Loads all settings from `.env` via pydantic-settings; auto-injects `LLM_API_KEY` into the provider-specific env var |
-| `llm.py` | `completion_call()` — routes to external API (via LiteLLM) or local Ollama |
+| `llm.py` | `acompletion_call()` — async LiteLLM wrapper; routes to external API or local Ollama |
 | `logger.py` | Configures the `agentic_pandas` logger; INFO/DEBUG → stdout, WARNING+ → stderr |
 | `message.py` | `Message(role, content)` — typed conversation turn |
 | `prompts.py` | System prompts defining LLM behaviour; `STATE_PROBE` (kernel introspection); `LOAD_STATE` (CSV loader) |
@@ -74,11 +74,12 @@ agentic-pandas/
 
 ### Async design
 
-The entire agentic loop is `async`. The key architectural decision is in `execute_and_capture()`, which offloads the blocking `jupyter_client` kernel call to a thread pool via `asyncio.run_in_executor()`. This means the event loop is never blocked during kernel execution — a kernel execution that takes several seconds does not freeze the process.
+The entire agentic loop is fully `async`. Both major I/O operations are non-blocking:
 
-The LLM call (`llm.completion_call`) is currently synchronous, so the event loop is blocked for the duration of each LLM round-trip. Making it async would allow full interleaving of concurrent tool calls across both the LLM and kernel phases.
+- **Kernel execution** — `execute_and_capture()` offloads the blocking `jupyter_client` call to a thread pool via `asyncio.run_in_executor()`, so the event loop is never blocked while waiting for the kernel.
+- **LLM calls** — `llm.acompletion_call()` uses `litellm.acompletion`, a native async HTTP call, so the event loop is free during each LLM round-trip.
 
-In MCP server mode (`server.py`) all tool handlers are `async def`. Concurrent tool calls are interleaved during kernel execution phases, but will block on each other during LLM calls.
+In MCP server mode (`server.py`) all tool handlers are `async def` and FastMCP manages the event loop. Both LLM and kernel phases are non-blocking, so concurrent tool calls can interleave freely across both.
 
 ---
 
