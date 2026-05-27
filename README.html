@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agentic Pandas</title>
+  <style>
+    /* ── Reset & base ─────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #f5f2ed;
+      --bg-card:     #faf8f5;
+      --bg-dark:     #1e1b16;
+      --sidebar-bg:  #edeae4;
+      --sidebar-border: #d5d0c7;
+      --accent:      #5a7f72;
+      --accent-dim:  #4a6d62;
+      --accent-light:#e8f0ed;
+      --text:        #2b2620;
+      --text-muted:  #6b6158;
+      --border:      #d8d3ca;
+      --code-bg:     #272320;
+      --code-text:   #e8e2d9;
+      --tag-bg:      #dde8e4;
+      --tag-text:    #3a6057;
+      --font-sans:   'Segoe UI', system-ui, -apple-system, sans-serif;
+      --font-mono:   'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      --radius:      8px;
+      --radius-lg:   12px;
+      --shadow:      0 1px 4px rgba(0,0,0,0.07), 0 2px 12px rgba(0,0,0,0.05);
+      --shadow-sm:   0 1px 3px rgba(0,0,0,0.06);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 15.5px;
+      line-height: 1.7;
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ── Layout ────────────────────────────────────────────────────── */
+    #main-content {
+      flex: 1 1 auto;
+      max-width: calc(100vw - 230px);
+      padding: 56px 56px 80px 60px;
+      overflow-y: auto;
+    }
+
+    #sidebar {
+      width: 210px;
+      flex: 0 0 210px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      background: var(--sidebar-bg);
+      border-left: 1px solid var(--sidebar-border);
+      padding: 36px 0 36px 0;
+    }
+
+    /* ── Sidebar nav ────────────────────────────────────────────────── */
+    #sidebar .nav-title {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding: 0 20px 10px 20px;
+    }
+
+    #sidebar nav a {
+      display: block;
+      padding: 5px 20px;
+      font-size: 13px;
+      color: var(--text-muted);
+      text-decoration: none;
+      border-left: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+      line-height: 1.4;
+    }
+
+    #sidebar nav a:hover,
+    #sidebar nav a.active {
+      color: var(--accent);
+      border-left-color: var(--accent);
+      background: rgba(90,127,114,0.07);
+    }
+
+    #sidebar nav .nav-sub {
+      padding-left: 34px;
+      font-size: 12.5px;
+    }
+
+    /* ── Typography ─────────────────────────────────────────────────── */
+    .section { margin-bottom: 64px; }
+
+    h1 {
+      font-size: 2.4rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      line-height: 1.2;
+    }
+
+    h2 {
+      font-size: 1.45rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1.5px solid var(--border);
+    }
+
+    h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--text);
+      margin: 20px 0 10px;
+    }
+
+    p { margin-bottom: 12px; }
+    p:last-child { margin-bottom: 0; }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    ul, ol {
+      padding-left: 22px;
+      margin-bottom: 12px;
+    }
+    li { margin-bottom: 4px; }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.855em;
+      background: var(--tag-bg);
+      color: var(--tag-text);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+
+    pre {
+      background: var(--code-bg);
+      color: var(--code-text);
+      font-family: var(--font-mono);
+      font-size: 0.845em;
+      line-height: 1.6;
+      padding: 20px 24px;
+      border-radius: var(--radius);
+      overflow-x: auto;
+      margin: 14px 0 20px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    pre code {
+      background: none;
+      color: inherit;
+      padding: 0;
+      font-size: inherit;
+    }
+
+    /* ── Tables ──────────────────────────────────────────────────────── */
+    .table-wrap { overflow-x: auto; margin: 16px 0 20px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9em;
+    }
+
+    thead tr {
+      background: var(--accent-light);
+    }
+
+    th {
+      text-align: left;
+      padding: 10px 14px;
+      font-weight: 600;
+      color: var(--accent-dim);
+      border-bottom: 2px solid var(--border);
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    tr:last-child td { border-bottom: none; }
+    tr:nth-child(even) td { background: rgba(0,0,0,0.015); }
+
+    /* ── Cards / callout boxes ──────────────────────────────────────── */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px 28px;
+      margin: 20px 0;
+      box-shadow: var(--shadow);
+    }
+
+    .callout {
+      background: var(--accent-light);
+      border-left: 3px solid var(--accent);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      padding: 12px 16px;
+      margin: 14px 0;
+      font-size: 0.93em;
+      color: var(--accent-dim);
+    }
+
+    /* ── Tag / badge ────────────────────────────────────────────────── */
+    .tag {
+      display: inline-block;
+      background: var(--tag-bg);
+      color: var(--tag-text);
+      font-size: 11.5px;
+      font-weight: 600;
+      padding: 2px 9px;
+      border-radius: 20px;
+      letter-spacing: 0.03em;
+      margin-right: 6px;
+    }
+
+    /* ── Header hero ─────────────────────────────────────────────────── */
+    #hero {
+      margin-bottom: 56px;
+    }
+
+    #hero .hero-tags { margin: 14px 0 20px; }
+
+    #hero .hero-desc {
+      font-size: 1.05rem;
+      color: var(--text-muted);
+      max-width: 640px;
+      line-height: 1.65;
+    }
+
+    /* ── Flowchart ──────────────────────────────────────────────────── */
+    .flowchart-wrap {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 32px 20px;
+      margin: 20px 0 28px;
+      box-shadow: var(--shadow);
+      overflow-x: auto;
+    }
+
+    .flowchart-wrap svg {
+      display: block;
+      margin: 0 auto;
+    }
+
+    /* ── Responsive guard ────────────────────────────────────────────── */
+    @media (max-width: 900px) {
+      body { flex-direction: column; }
+      #sidebar {
+        width: 100%;
+        height: auto;
+        position: static;
+        border-left: none;
+        border-top: 1px solid var(--sidebar-border);
+        order: 2;
+        padding: 20px 0;
+      }
+      #main-content {
+        max-width: 100%;
+        padding: 32px 24px 60px;
+        order: 1;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Main scrollable content ───────────────────────────────────── -->
+  <main id="main-content">
+    <!-- ── Hero ──────────────────────────────────────────────────────── -->
+    <section id="hero">
+      <div class="hero-tags">
+        <span class="tag">Python</span>
+        <span class="tag">LLM</span>
+        <span class="tag">Pandas</span>
+        <span class="tag">Docker</span>
+        <span class="tag">MCP</span>
+      </div>
+      <h1>Agentic Pandas</h1>
+      <p class="hero-desc">
+        A REPL-style agentic loop using an LLM to write pandas code, executing in a sandboxed
+        Jupyter kernel running inside a Docker container. Describe data transformations in plain
+        language (or a markdown file); the agent generates, runs, and iteratively fixes
+        Python/pandas code until the task succeeds, then saves the output in <code>.csv</code>
+        and <code>.xlsx</code> formats and renders the result as an HTML table in your browser.
+      </p>
+    </section>
+
+    <!-- ── How It Works ──────────────────────────────────────────────── -->
+    <section id="how-it-works" class="section">
+      <h2>How It Works</h2>
+      <p>The agent runs a continuous loop: your prompt is sent to an LLM, which returns a Python code block. That code executes inside a sandboxed Jupyter kernel in Docker. On error the traceback is appended to the conversation and the LLM retries; on success the output is saved and opened in a browser.</p>
+
+      <div class="flowchart-wrap">
+        <svg width="700" height="420" viewBox="0 0 700 420" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI',system-ui,sans-serif">
+          <defs>
+            <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#5a7f72"/>
+            </marker>
+            <marker id="arr-red" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#b85c5c"/>
+            </marker>
+          </defs>
+
+          <!-- User Prompt -->
+          <rect x="270" y="10" width="160" height="44" rx="22" fill="#dde8e4" stroke="#5a7f72" stroke-width="1.5"/>
+          <text x="350" y="36" text-anchor="middle" font-size="13" font-weight="600" fill="#2b2620">User Prompt</text>
+
+          <!-- Arrow down to Main Loop -->
+          <line x1="350" y1="54" x2="350" y2="88" stroke="#5a7f72" stroke-width="1.5" marker-end="url(#arr)"/>
+
+          <!-- Main Loop -->
+          <rect x="240" y="90" width="220" height="50" rx="8" fill="#faf8f5" stroke="#5a7f72" stroke-width="1.8"/>
+          <text x="350" y="113" text-anchor="middle" font-size="13" font-weight="700" fill="#2b2620">Main Loop</text>
+          <text x="350" y="130" text-anchor="middle" font-size="11" fill="#6b6158">kernel state + history</text>
+
+          <!-- Arrow right to LLM -->
+          <line x1="460" y1="115" x2="520" y2="115" stroke="#5a7f72" stroke-width="1.5" marker-end="url(#arr)"/>
+          <text x="490" y="108" text-anchor="middle" font-size="10.5" fill="#6b6158">sends</text>
+
+          <!-- LLM Box -->
+          <rect x="522" y="72" width="162" height="86" rx="8" fill="#faf8f5" stroke="#5a7f72" stroke-width="1.8"/>
+          <text x="603" y="96" text-anchor="middle" font-size="13" font-weight="700" fill="#2b2620">LLM</text>
+          <text x="603" y="113" text-anchor="middle" font-size="10.5" fill="#6b6158">via LiteLLM</text>
+          <text x="603" y="127" text-anchor="middle" font-size="10" fill="#6b6158">OpenAI · Anthropic</text>
+          <text x="603" y="140" text-anchor="middle" font-size="10" fill="#6b6158">Together · Ollama…</text>
+
+          <!-- Arrow left from LLM back to Main Loop -->
+          <line x1="522" y1="130" x2="462" y2="130" stroke="#5a7f72" stroke-width="1.5" marker-end="url(#arr)"/>
+          <text x="492" y="145" text-anchor="middle" font-size="10.5" fill="#6b6158">code block</text>
+
+          <!-- Arrow down to Jupyter Kernel -->
+          <line x1="350" y1="140" x2="350" y2="188" stroke="#5a7f72" stroke-width="1.5" marker-end="url(#arr)"/>
+
+          <!-- Jupyter Kernel -->
+          <rect x="225" y="190" width="250" height="54" rx="8" fill="#faf8f5" stroke="#5a7f72" stroke-width="1.8"/>
+          <text x="350" y="214" text-anchor="middle" font-size="13" font-weight="700" fill="#2b2620">Jupyter Kernel</text>
+          <text x="350" y="231" text-anchor="middle" font-size="11" fill="#6b6158">Docker container</text>
+
+          <!-- Error path — arrow right -->
+          <line x1="475" y1="217" x2="522" y2="217" stroke="#b85c5c" stroke-width="1.5" marker-end="url(#arr-red)"/>
+          <text x="499" y="210" text-anchor="middle" font-size="10.5" fill="#b85c5c">error?</text>
+
+          <!-- Error box -->
+          <rect x="522" y="192" width="162" height="60" rx="8" fill="#fdf0f0" stroke="#b85c5c" stroke-width="1.5"/>
+          <text x="603" y="215" text-anchor="middle" font-size="11.5" font-weight="600" fill="#b85c5c">Append traceback</text>
+          <text x="603" y="230" text-anchor="middle" font-size="11" fill="#6b6158">re-probe state</text>
+          <text x="603" y="244" text-anchor="middle" font-size="11" fill="#6b6158">→ retry LLM call</text>
+
+          <!-- Arrow from Error box back up to Main Loop (curved) -->
+          <path d="M 684 192 Q 684 80 462 100" stroke="#b85c5c" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#arr-red)"/>
+
+          <!-- Success arrow down -->
+          <line x1="350" y1="244" x2="350" y2="270" stroke="#5a7f72" stroke-width="1.5" marker-end="url(#arr)"/>
+          <text x="362" y="258" font-size="10.5" fill="#5a7f72">success</text>
+
+          <!-- Output box -->
+          <rect x="215" y="272" width="270" height="70" rx="8" fill="#dde8e4" stroke="#5a7f72" stroke-width="1.8"/>
+          <text x="350" y="296" text-anchor="middle" font-size="13" font-weight="700" fill="#2b2620">CSV / XLSX Output</text>
+          <text x="350" y="313" text-anchor="middle" font-size="11" fill="#4a6d62">→ HTML table rendered</text>
+          <text x="350" y="328" text-anchor="middle" font-size="11" fill="#4a6d62">→ Opened in browser</text>
+
+          <!-- Arrow down to follow-up -->
+          <line x1="350" y1="342" x2="350" y2="376" stroke="#5a7f72" stroke-width="1.5" marker-end="url(#arr)"/>
+
+          <!-- Follow-up diamond -->
+          <polygon points="350,378 415,395 350,412 285,395" fill="#faf8f5" stroke="#5a7f72" stroke-width="1.5"/>
+          <text x="350" y="399" text-anchor="middle" font-size="11" fill="#2b2620">Follow-up?</text>
+
+          <!-- yes — loop back left -->
+          <path d="M 285 395 Q 140 395 140 115 Q 140 90 238 90" stroke="#5a7f72" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#arr)"/>
+          <text x="148" y="255" font-size="10.5" font-weight="600" fill="#5a7f72" paint-order="stroke" stroke="#faf8f5" stroke-width="4" stroke-linejoin="round">yes</text>
+
+          <!-- no label -->
+          <text x="424" y="399" font-size="10.5" fill="#6b6158">no → save history &amp; exit</text>
+        </svg>
+      </div>
+    </section>
+
+    <!-- ── Architecture ─────────────────────────────────────────────── -->
+    <section id="architecture" class="section">
+      <h2>Architecture</h2>
+      <pre><code>agentic-pandas/
+├── src/
+│   └── agentic_pandas/
+│       ├── main.py      # Entry point &amp; agentic REPL loop
+│       ├── server.py    # MCP server mode (FastMCP)
+│       ├── config.py    # Pydantic-settings config
+│       ├── llm.py       # LiteLLM wrapper
+│       ├── logger.py    # Logging setup
+│       ├── message.py   # Message pydantic model
+│       └── prompts.py   # System prompts + STATE_PROBE + LOAD_STATE
+├── skills/
+│   └── agentic-pandas/
+│       └── SKILL.md     # MCP client skill
+├── docker/
+│   └── Dockerfile       # Sandboxed Jupyter kernel image
+├── pyproject.toml
+└── .env                 # Local config (not committed)</code></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Module</th><th>Responsibility</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>main.py</code></td>
+              <td>REPL loop, Docker kernel lifecycle, error retry, HTML delivery</td>
+            </tr>
+            <tr>
+              <td><code>server.py</code></td>
+              <td>MCP server — exposes the agent as FastMCP tools (<code>start_session</code>, <code>pandas_query</code>, <code>end_session</code>, <code>diagnose_environment</code>, <code>diagnose_kernel</code>); registers <code>atexit</code> and <code>SIGTERM</code> handlers to stop the Docker container on exit</td>
+            </tr>
+            <tr>
+              <td><code>config.py</code></td>
+              <td>Loads all settings from <code>.env</code> via pydantic-settings; auto-injects <code>LLM_API_KEY</code> into the provider-specific env var</td>
+            </tr>
+            <tr>
+              <td><code>llm.py</code></td>
+              <td><code>acompletion_call()</code> — async LiteLLM wrapper; routes to external API or local Ollama</td>
+            </tr>
+            <tr>
+              <td><code>logger.py</code></td>
+              <td>Configures the <code>agentic_pandas</code> logger; INFO/DEBUG → stdout, WARNING+ → stderr</td>
+            </tr>
+            <tr>
+              <td><code>message.py</code></td>
+              <td><code>Message(role, content)</code> — typed conversation turn</td>
+            </tr>
+            <tr>
+              <td><code>prompts.py</code></td>
+              <td>System prompts defining LLM behaviour; <code>STATE_PROBE</code> (kernel introspection); <code>LOAD_STATE</code> (CSV loader)</td>
+            </tr>
+            <tr>
+              <td><code>docker/Dockerfile</code></td>
+              <td>Defines the sandboxed Python/pandas kernel image (<code>jupyter-pandas-kernel:latest</code>)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="async-design">Async Design</h3>
+      <p>The entire agentic loop is fully <code>async</code>. Both major I/O operations are non-blocking:</p>
+      <ul>
+        <li><strong>Kernel execution</strong> — <code>execute_and_capture()</code> offloads the blocking <code>jupyter_client</code> call to a thread pool via <code>asyncio.run_in_executor()</code>, so the event loop is never blocked while waiting for the kernel.</li>
+        <li><strong>LLM calls</strong> — <code>llm.acompletion_call()</code> uses <code>litellm.acompletion</code>, a native async HTTP call, so the event loop is free during each LLM round-trip.</li>
+      </ul>
+      <div class="callout">In MCP server mode (<code>server.py</code>), all tool handlers are <code>async def</code> and FastMCP manages the event loop. Concurrent tool calls can interleave freely across both LLM and kernel phases.</div>
+    </section>
+
+    <!-- ── Output Modes ───────────────────────────────────────────────── -->
+    <section id="output-modes" class="section">
+      <h2>Output Modes</h2>
+      <p>The <code>-s</code> / <code>--steps</code> flag switches between two distinct output behaviours:</p>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:20px 0;">
+        <div class="card">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--accent);margin-bottom:8px;">Default mode</div>
+          <p style="font-size:0.9em;margin-bottom:10px;color:var(--text-muted);">LLM saves <strong>one final</strong> CSV + XLSX</p>
+          <pre style="font-size:0.78em;margin:0;"><code>output_files/
+  final_result_df_&lt;name&gt;_&lt;ts&gt;.csv
+  final_result_df_&lt;name&gt;_&lt;ts&gt;.xlsx</code></pre>
+          <p style="font-size:0.85em;margin-top:10px;margin-bottom:0;">App reads newest CSV → <strong>one HTML tab</strong></p>
+        </div>
+        <div class="card">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--accent);margin-bottom:8px;">Steps mode &nbsp;<code>-s</code></div>
+          <p style="font-size:0.9em;margin-bottom:10px;color:var(--text-muted);">LLM saves <strong>each intermediate step</strong></p>
+          <pre style="font-size:0.78em;margin:0;"><code>output_files/steps/
+  STEP_1_&lt;name&gt;_&lt;ts&gt;.csv
+  STEP_2_&lt;name&gt;_&lt;ts&gt;.csv
+  …</code></pre>
+          <p style="font-size:0.85em;margin-top:10px;margin-bottom:0;">App reads all CSVs → <strong>one HTML tab per step</strong></p>
+        </div>
+      </div>
+
+      <div class="callout">After a successful run, <code>file_results()</code> archives all CSVs and HTML files into a named sub-folder keyed to the result filename, keeping the output directories clean for the next run.</div>
+    </section>
+
+    <!-- ── Quickstart ─────────────────────────────────────────────────── -->
+    <section id="quickstart" class="section">
+      <h2>Quickstart</h2>
+      <ol>
+        <li>
+          <strong>Clone and install</strong>
+          <pre><code>git clone https://github.com/tihanst/agentic-pandas
+cd agentic-pandas
+uv sync</code></pre>
+        </li>
+        <li>
+          <strong>Build the sandboxed kernel image</strong> (one-time)
+          <pre><code>docker build -t jupyter-pandas-kernel:latest docker/</code></pre>
+        </li>
+        <li>
+          <strong>Create a <code>.env</code> file</strong> in the project directory — see <a href="#configuration">Configuration</a> below.
+        </li>
+        <li>
+          <strong>Run</strong>
+          <pre><code>uv run agentic-pandas</code></pre>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ── Installation ───────────────────────────────────────────────── -->
+    <section id="installation" class="section">
+      <h2>Installation</h2>
+      <p>Requires <strong>Python 3.12+</strong>, <a href="https://github.com/astral-sh/uv"><code>uv</code></a>, and <a href="https://docs.docker.com/get-docker/">Docker</a>.</p>
+      <div class="callout">Kernel ports 5555–5559 are bound to <code>127.0.0.1</code> only. The container is stopped automatically on exit or Ctrl-C.</div>
+    </section>
+
+    <!-- ── Configuration ─────────────────────────────────────────────── -->
+    <section id="configuration" class="section">
+      <h2>Configuration</h2>
+      <p>Create a <code>.env</code> file in the project directory. <code>TOP_LEVEL_OUTPUT_PATH</code> is the only required path — the following structure is created automatically.</p>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0 24px;">
+        <div>
+          <p style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--accent);margin-bottom:6px;">External API provider</p>
+          <pre><code># e.g. Together AI
+PROVIDER=together
+LLM_NAME=gptoss120b
+LLM_ENDPOINT=together_ai/openai/gpt-oss-120b
+IS_LOCAL=false
+
+# Optional — LiteLLM reads provider env var if omitted
+LLM_API_KEY=your-api-key-here
+
+TOP_LEVEL_OUTPUT_PATH=./my_project</code></pre>
+        </div>
+        <div>
+          <p style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--accent);margin-bottom:6px;">Local Ollama provider</p>
+          <pre><code>PROVIDER=ollama
+LLM_NAME=ollama/gpt-oss-120b
+IS_LOCAL=true
+LLM_ENDPOINT=http://localhost:11434
+
+TOP_LEVEL_OUTPUT_PATH=./my_project</code></pre>
+        </div>
+      </div>
+
+      <p>The following directory structure is created automatically under <code>TOP_LEVEL_OUTPUT_PATH</code>:</p>
+      <pre><code>my_project/
+├── output_files/         # CSVs / XLSX written by the LLM
+│   └── steps/            # output for steps mode (-s)
+├── html_files/           # Rendered HTML result tables
+│   └── steps/            # HTML for steps mode (-s)
+├── data_input_files/     # Input CSVs (used with -d)
+├── markdown_files/       # Markdown prompt files (used with -i)
+└── history/              # Saved conversation histories</code></pre>
+
+      <div class="callout">The top-level directory is mounted into the container at <code>/sandbox/&lt;top_level_name&gt;/</code>. Individual paths can be overridden in <code>.env</code> (e.g. <code>INPUT_PATH=/data/my_csv_files</code>).</div>
+
+      <h3 id="api-keys">API Keys</h3>
+      <p>Two options — both result in LiteLLM finding the key as a standard provider env var:</p>
+      <ol>
+        <li><strong>Export before running</strong> — <code>export OPENAI_API_KEY=...</code> etc. LiteLLM discovers these automatically.</li>
+        <li><strong><code>LLM_API_KEY</code> in <code>.env</code></strong> — <code>config.py</code> injects it into the correct env var on startup based on <code>PROVIDER</code>.</li>
+      </ol>
+      <div class="callout" style="font-size:0.87em;">Key mapping: <code>together</code>/<code>together_ai</code> → <code>TOGETHER_API_KEY</code> · <code>openai</code> → <code>OPENAI_API_KEY</code> · <code>anthropic</code> → <code>ANTHROPIC_API_KEY</code> · <code>groq</code> → <code>GROQ_API_KEY</code> · <code>mistral</code> → <code>MISTRAL_API_KEY</code> · <code>cohere</code> → <code>COHERE_API_KEY</code> · <code>google_gemini</code> → <code>GEMINI_API_KEY</code></div>
+
+      <h3 id="llm-providers">LLM Provider Setup</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Mode</th><th><code>IS_LOCAL</code></th><th>How it works</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>External API</td>
+              <td><code>false</code></td>
+              <td><code>LLM_ENDPOINT</code> is passed directly to <code>litellm.completion()</code>. See the <a href="https://docs.litellm.ai/docs/providers">LiteLLM provider docs</a> for the exact string format per provider.</td>
+            </tr>
+            <tr>
+              <td>Local server</td>
+              <td><code>true</code></td>
+              <td>Routes to Ollama using <code>LLM_NAME</code> and <code>LLM_ENDPOINT</code> as <code>api_base</code>. Other local servers can be added in <code>llm.py</code>.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ── Usage ──────────────────────────────────────────────────────── -->
+    <section id="usage" class="section">
+      <h2>Usage</h2>
+      <p>Prompts are terminated by <code>_END_</code>, which can be appended directly to your text, added after any amount of whitespace, or typed on its own line when you are done. After each successful run you can enter a follow-up prompt or type <code>!exit</code> to save history and quit.</p>
+
+      <pre><code># Interactive — type a prompt, terminate with _END_, follow up or !exit to quit
+uv run agentic-pandas
+
+# Pre-load a CSV as initial_data_frame (bare filename or full path — copied in automatically)
+uv run agentic-pandas -d my_data.csv
+uv run agentic-pandas -d /path/to/anywhere/my_data.csv
+
+# Non-interactive: run a markdown prompt file (bare filename or full path)
+uv run agentic-pandas -i prompt.md
+
+# Save each intermediate step as a separate CSV/HTML
+uv run agentic-pandas -s
+
+# Compact conversation history after each iteration to reduce token usage
+uv run agentic-pandas -c
+
+# Set logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL — default: WARNING)
+uv run agentic-pandas -l DEBUG
+
+# Combinations
+uv run agentic-pandas -d /path/to/my_data.csv -i /path/to/my_analysis.md -s</code></pre>
+
+      <div class="callout">On <code>!exit</code>, the full conversation is saved as a timestamped <code>.txt</code> file in <code>history/</code>.</div>
+    </section>
+
+    <!-- ── Error Handling ─────────────────────────────────────────────── -->
+    <section id="error-handling" class="section">
+      <h2>Error Handling</h2>
+      <p>When code execution fails, the agent strips ANSI codes from the traceback, re-probes the kernel state, and feeds the error back to the LLM as a user message. Any partial output files are quarantined into a timestamped error subdirectory before the retry.</p>
+
+      <div class="flowchart-wrap">
+        <svg width="680" height="460" viewBox="0 0 680 460" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI',system-ui,sans-serif">
+          <defs>
+            <marker id="earr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#5a7f72"/>
+            </marker>
+            <marker id="earr-red" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#b85c5c"/>
+            </marker>
+            <marker id="earr-grn" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#4a8c6e"/>
+            </marker>
+          </defs>
+
+          <!-- LLM returns code -->
+          <rect x="220" y="10" width="240" height="44" rx="8" fill="#dde8e4" stroke="#5a7f72" stroke-width="1.5"/>
+          <text x="340" y="36" text-anchor="middle" font-size="12.5" font-weight="600" fill="#2b2620">LLM returns code block</text>
+
+          <!-- arrow down -->
+          <line x1="340" y1="54" x2="340" y2="88" stroke="#5a7f72" stroke-width="1.5" marker-end="url(#earr)"/>
+
+          <!-- execute_and_capture -->
+          <rect x="195" y="90" width="290" height="50" rx="8" fill="#faf8f5" stroke="#5a7f72" stroke-width="1.8"/>
+          <text x="340" y="111" text-anchor="middle" font-size="12.5" font-weight="700" fill="#2b2620">execute_and_capture()</text>
+          <text x="340" y="128" text-anchor="middle" font-size="11" fill="#6b6158">runs code in kernel (Docker container)</text>
+
+          <!-- arrow down to diamond -->
+          <line x1="340" y1="140" x2="340" y2="176" stroke="#5a7f72" stroke-width="1.5" marker-end="url(#earr)"/>
+
+          <!-- Decision diamond -->
+          <polygon points="340,178 420,200 340,222 260,200" fill="#faf8f5" stroke="#5a7f72" stroke-width="1.5"/>
+          <text x="340" y="204" text-anchor="middle" font-size="11.5" fill="#2b2620">error?</text>
+
+          <!-- YES — arrow left to error path -->
+          <line x1="260" y1="200" x2="185" y2="200" stroke="#b85c5c" stroke-width="1.5" marker-end="url(#earr-red)"/>
+          <text x="222" y="192" text-anchor="middle" font-size="10.5" fill="#b85c5c">yes</text>
+
+          <!-- Error pipeline box -->
+          <rect x="14" y="170" width="170" height="102" rx="8" fill="#fdf0f0" stroke="#b85c5c" stroke-width="1.5"/>
+          <text x="99" y="193" text-anchor="middle" font-size="11.5" font-weight="600" fill="#b85c5c">Error pipeline</text>
+          <text x="99" y="210" text-anchor="middle" font-size="10.5" fill="#6b6158">strip ANSI traceback</text>
+          <text x="99" y="225" text-anchor="middle" font-size="10.5" fill="#6b6158">re-probe kernel state</text>
+          <text x="99" y="240" text-anchor="middle" font-size="10.5" fill="#6b6158">move partial files</text>
+          <text x="99" y="255" text-anchor="middle" font-size="10.5" fill="#6b6158">→ error_&lt;ts&gt;/ subdir</text>
+
+          <!-- arrow up from error to retry LLM -->
+          <line x1="99" y1="170" x2="99" y2="118" stroke="#b85c5c" stroke-width="1.5" marker-end="url(#earr-red)"/>
+
+          <!-- Retry LLM box -->
+          <rect x="14" y="74" width="170" height="44" rx="8" fill="#fdf0f0" stroke="#b85c5c" stroke-width="1.5"/>
+          <text x="99" y="93" text-anchor="middle" font-size="11.5" font-weight="600" fill="#b85c5c">Retry LLM call</text>
+          <text x="99" y="109" text-anchor="middle" font-size="10" fill="#6b6158">up to 10 format retries</text>
+
+          <!-- arrow right from retry to execute -->
+          <line x1="184" y1="96" x2="193" y2="96" stroke="#b85c5c" stroke-width="1.5" marker-end="url(#earr-red)"/>
+          <path d="M 193 96 Q 193 68 194 68 Q 195 68 340 68 Q 340 68 340 88" stroke="#b85c5c" stroke-width="1.5" fill="none" stroke-dasharray="4,3" marker-end="url(#earr-red)"/>
+
+          <!-- NO — arrow down -->
+          <line x1="340" y1="222" x2="340" y2="266" stroke="#4a8c6e" stroke-width="1.5" marker-end="url(#earr-grn)"/>
+          <text x="352" y="248" font-size="10.5" fill="#4a8c6e">no</text>
+
+          <!-- Read CSV / XLSX output -->
+          <rect x="200" y="268" width="280" height="44" rx="8" fill="#dde8e4" stroke="#5a7f72" stroke-width="1.5"/>
+          <text x="340" y="286" text-anchor="middle" font-size="12.5" font-weight="600" fill="#2b2620">Read CSV / XLSX output</text>
+          <text x="340" y="302" text-anchor="middle" font-size="10.5" fill="#4a6d62">render HTML table</text>
+
+          <!-- arrow down -->
+          <line x1="340" y1="312" x2="340" y2="346" stroke="#5a7f72" stroke-width="1.5" marker-end="url(#earr)"/>
+
+          <!-- Open in browser -->
+          <rect x="230" y="348" width="220" height="44" rx="8" fill="#dde8e4" stroke="#5a7f72" stroke-width="1.5"/>
+          <text x="340" y="367" text-anchor="middle" font-size="12.5" font-weight="600" fill="#2b2620">Open in browser</text>
+          <text x="340" y="383" text-anchor="middle" font-size="10.5" fill="#4a6d62">re-probe kernel state</text>
+
+          <!-- arrow down -->
+          <line x1="340" y1="392" x2="340" y2="428" stroke="#5a7f72" stroke-width="1.5" marker-end="url(#earr)"/>
+
+          <!-- Await follow-up -->
+          <rect x="215" y="430" width="250" height="22" rx="8" fill="#faf8f5" stroke="#5a7f72" stroke-width="1.2"/>
+          <text x="340" y="445" text-anchor="middle" font-size="11" fill="#6b6158">await follow-up input or !exit</text>
+        </svg>
+      </div>
+
+      <div class="callout">On error, any files already written to the output directory are moved into an <code>error_&lt;YYYY-MM-DD_HH-MM-SS&gt;/</code> subdirectory for inspection. In steps mode these appear under <code>output_files/steps/</code> and <code>html_files/steps/</code>.</div>
+    </section>
+
+    <!-- ── MCP Server ─────────────────────────────────────────────────── -->
+    <section id="mcp-server" class="section">
+      <h2>MCP Server Mode</h2>
+      <p><code>server.py</code> exposes the agent as <a href="https://modelcontextprotocol.io/">Model Context Protocol</a> tools via <a href="https://github.com/jlowin/fastmcp">FastMCP</a>, driveable by any MCP-compatible client (e.g. Claude Desktop).</p>
+
+      <pre><code>uv run agentic-pandas-server</code></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Tool</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>start_session</code></td>
+              <td>Starts the Docker kernel. Optionally pre-loads a CSV (<code>datafile</code> argument).</td>
+            </tr>
+            <tr>
+              <td><code>pandas_query</code></td>
+              <td>Runs a natural-language data analysis query against the active kernel. Returns the first 5 rows of the result as a markdown table; the full output is also saved to file and opened in the browser.</td>
+            </tr>
+            <tr>
+              <td><code>end_session</code></td>
+              <td>Stops the kernel and saves conversation history. Returns the path to the saved output file.</td>
+            </tr>
+            <tr>
+              <td><code>diagnose_environment</code></td>
+              <td>Reports which API keys and config values are visible to the server process.</td>
+            </tr>
+            <tr>
+              <td><code>diagnose_kernel</code></td>
+              <td>Runs the Docker container briefly with captured output to debug startup failures.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout">Uses the same <code>.env</code> configuration as the CLI. Call <code>start_session</code> first, then <code>pandas_query</code>, then <code>end_session</code>. The Docker container is also stopped automatically if the server process exits, so containers are not left running orphaned.</div>
+    </section>
+
+    <!-- ── Dependencies ───────────────────────────────────────────────── -->
+    <section id="dependencies" class="section">
+      <h2>Dependencies</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Package</th><th>Purpose</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>jupyter-client</code></td><td>Manages the IPython kernel connection over TCP</td></tr>
+            <tr><td><code>ipykernel</code></td><td>Python kernel backend (runs inside Docker)</td></tr>
+            <tr><td><code>litellm</code></td><td>Unified LLM interface (supports OpenAI, Anthropic, Together, and many others)</td></tr>
+            <tr><td><code>pandas</code></td><td>DataFrame operations in generated code</td></tr>
+            <tr><td><code>matplotlib</code></td><td>Available to generated code for plotting</td></tr>
+            <tr><td><code>pydantic</code> / <code>pydantic-settings</code></td><td>Config models and <code>.env</code> loading</td></tr>
+            <tr><td><code>mcp</code> / <code>fastmcp</code></td><td>MCP server framework (<code>server.py</code> mode)</td></tr>
+            <tr><td><code>python-dotenv</code></td><td><code>.env</code> loading for the MCP server process</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- ── Right-hand sticky nav ─────────────────────────────────────── -->
+  <aside id="sidebar">
+    <div class="nav-title">Contents</div>
+    <nav id="toc">
+      <a href="#hero">Overview</a>
+      <a href="#how-it-works">How It Works</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#async-design" class="nav-sub">Async Design</a>
+      <a href="#output-modes">Output Modes</a>
+      <a href="#quickstart">Quickstart</a>
+      <a href="#installation">Installation</a>
+      <a href="#configuration">Configuration</a>
+      <a href="#api-keys" class="nav-sub">API Keys</a>
+      <a href="#llm-providers" class="nav-sub">LLM Providers</a>
+      <a href="#usage">Usage</a>
+      <a href="#error-handling">Error Handling</a>
+      <a href="#mcp-server">MCP Server</a>
+      <a href="#dependencies">Dependencies</a>
+    </nav>
+  </aside>
+
+  <script>
+    // Highlight active nav link on scroll
+    const sections = document.querySelectorAll('[id]');
+    const navLinks = document.querySelectorAll('#toc a');
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          navLinks.forEach(a => a.classList.remove('active'));
+          const active = document.querySelector(`#toc a[href="#${e.target.id}"]`);
+          if (active) active.classList.add('active');
+        }
+      });
+    }, { rootMargin: '-20% 0px -70% 0px' });
+    sections.forEach(s => observer.observe(s));
+  </script>
+
+</body>
+</html>
