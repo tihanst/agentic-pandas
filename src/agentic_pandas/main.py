@@ -626,7 +626,18 @@ async def main():
         acceptable_code_block_counter = 0
         while True:
             # While loop will loop until acceptable code block is returned.
-            result = await llm.acompletion_call(payload)
+
+            try:
+                result = await llm.acompletion_call(payload)
+            except RuntimeError as e:
+                logger.exception("LLM request failed")
+                cleanup_and_exit(
+                    kc,
+                    proc,
+                    message=f"LLM request failed: {e}",
+                    conversation_history=conversation_history,
+                    path_settings=path_settings,
+                )
             clean_result = strip_ansi(result["choices"][0]["message"]["content"])
             logger.info(f"Code block is:\n\n{clean_result}")
 
