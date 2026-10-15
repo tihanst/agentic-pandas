@@ -429,11 +429,14 @@ def reset_reload_context_compact_history(
     conversation_history.clear()
     conversation_history.append(Message(role="system", content=system_prompt))
 
-    # Test context window compression by adding in SYSTEM plus concatenation of summary of all previous user prompts (not messages as those contain code and error traces)
+    # acquire_input() has already appended the new query, so exclude it from the directions that produced the current kernel state.
+    completed_user_queries = accumulated_user_queries[:-1]
 
     query = (
-        f"The current kernel state is: \n\n{state}\n\n\nThis was achieved through the following user directions:\n{'\n'.join(accumulated_user_queries)}\n\nThe next user instruction is:\n\n"
-        + query
+        f"The current kernel state is:\n\n{state}\n\n"
+        "This state was produced by the following completed user directions:\n"
+        f"{'\n'.join(completed_user_queries)}\n\n"
+        "Carry out the following current user instruction:\n\n" + query
     )
     conversation_history.append(Message(role="user", content=query))
     logger.info(f"Compact conversation history is: {conversation_history[-1].content}")
